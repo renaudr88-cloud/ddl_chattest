@@ -1,0 +1,17 @@
+{
+  "name": "ddl-chat-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DDL Community Chat WebSocket server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "DB_DRIVER=memory CHAT_SECRET=dev-secret-dev-secret-dev-secret-123 UPLOAD_BASE_URL=https://ddl-online.com/uploads/chat/ node server.js",
+    "test": "node test.js"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "mysql2": "^3.11.0",
+    "ws": "^8.18.0"
+  }
+}

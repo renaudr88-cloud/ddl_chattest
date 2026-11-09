@@ -1,0 +1,11 @@
+# secrets
+.env
+server/.env
+php/chat-config.local.php
+
+# dependencies / builds
+node_modules/
+.expo/
+dist/
+*.log
+.DS_Store
