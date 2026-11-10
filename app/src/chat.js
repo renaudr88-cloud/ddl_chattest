@@ -3,9 +3,11 @@ import { useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WS_URL, LOGIN_URL, UPLOAD_URL } from './config';
+import { PLATFORMS } from './platforms';
 
 const TOKEN_KEY = 'ddl-chat-token';
 const READ_KEY = 'ddl-chat-read';
+const PLATFORM_KEY = 'ddl-chat-platform';
 
 const initial = {
   status: 'idle',          // idle | connecting | online | offline
@@ -13,9 +15,10 @@ const initial = {
   online: 0,
   rooms: {},               // room -> messages[]
   more: {},                // room -> bool (older messages available)
-  dms: [],                 // [{room, other, lastId, lastAt, online}]
+  platform: PLATFORMS[0].key, // the platform the player is looking at (Dartsmind / Scolia)
+  dms: [],                 // [{room, platform, other, lastId, lastAt, online}]
   read: {},                // room -> last read message id
-  friendlies: [], swap: [], help: [],
+  friendlies: {}, swap: {}, help: {}, // per platform: { dartsmind: [...], scolia: [...] }
   members: [], log: [],
   blocked: null,           // {reason:'banned'|'kicked', until}
 };
@@ -32,8 +35,9 @@ class ChatClient {
   /* ---------- auth ---------- */
   async restore() {
     try {
-      const [t, r] = await Promise.all([AsyncStorage.getItem(TOKEN_KEY), AsyncStorage.getItem(READ_KEY)]);
+      const [t, r, p] = await Promise.all([AsyncStorage.getItem(TOKEN_KEY), AsyncStorage.getItem(READ_KEY), AsyncStorage.getItem(PLATFORM_KEY)]);
       if (r) this.set({ read: JSON.parse(r) });
+      if (PLATFORMS.some(x => x.key === p)) this.set({ platform: p });
       if (t) { this.start(t); return true; }
     } catch {}
     return false;
@@ -51,7 +55,7 @@ class ChatClient {
   async logout() {
     this.stop();
     await AsyncStorage.removeItem(TOKEN_KEY);
-    this.set({ ...initial, status: 'idle' });
+    this.set({ ...initial, status: 'idle', platform: this.state.platform });
   }
 
   /* ---------- socket ---------- */
@@ -100,19 +104,21 @@ class ChatClient {
     switch (m.type) {
       case 'ready':
         this.retry = 0;
-        this.set(s => ({
-          status: 'online', blocked: null, me: m.me, online: m.online,
-          rooms: { ...s.rooms, general: m.general }, more: { ...s.more, general: m.generalMore },
-          dms: m.dms, friendlies: m.friendlies, swap: m.swap, help: m.help,
-        }));
+        this.set(s => {
+          const rooms = { ...s.rooms }, more = { ...s.more };
+          for (const p of Object.keys(m.general)) { rooms['general:' + p] = m.general[p]; more['general:' + p] = m.generalMore[p]; }
+          return { status: 'online', blocked: null, me: m.me, online: m.online, rooms, more,
+            dms: m.dms, friendlies: m.friendlies, swap: m.swap, help: m.help };
+        });
         // Refresh an open private chat after a reconnect.
-        if (this.activeRoom && this.activeRoom !== 'general') this.loadRoom(this.activeRoom);
+        if (this.activeRoom && this.activeRoom.startsWith('dm:')) this.loadRoom(this.activeRoom);
         break;
       case 'message': this.addMessage(m.message); break;
       case 'deleted':
         this.set(s => ({ rooms: { ...s.rooms, [m.room]: (s.rooms[m.room] || []).filter(x => x.id !== m.id) } }));
         break;
-      case 'friendlies': case 'swap': case 'help': this.set({ [m.type]: m.list }); break;
+      case 'friendlies': case 'swap': case 'help':
+        this.set(s => ({ [m.type]: { ...s[m.type], [m.platform]: m.list } })); break;
       case 'presence': this.set({ online: m.online }); break;
       case 'sanction': this.set(s => ({ me: { ...s.me, sanction: m.sanction } })); break;
       case 'blocked': this.set({ blocked: { reason: m.reason, until: m.until } }); break;
@@ -130,7 +136,7 @@ class ChatClient {
       if (msg.room.startsWith('dm:')) {
         const found = dms.find(d => d.room === msg.room);
         const entry = found ? { ...found, lastId: msg.id, lastAt: msg.ts }
-          : msg.user.id !== s.me?.id ? { room: msg.room, other: msg.user, lastId: msg.id, lastAt: msg.ts } : null;
+          : msg.user.id !== s.me?.id ? { room: msg.room, platform: msg.room.split(':')[1], other: msg.user, lastId: msg.id, lastAt: msg.ts } : null;
         if (entry) dms = [entry, ...dms.filter(d => d.room !== msg.room)];
       }
       return { rooms, dms };
@@ -155,6 +161,14 @@ class ChatClient {
     this.set(s => ({ read: { ...s.read, [room]: id } }));
     AsyncStorage.setItem(READ_KEY, JSON.stringify(this.state.read)).catch(() => {});
   }
+  setPlatform(p) {
+    if (p === this.state.platform) return;
+    this.set({ platform: p });
+    AsyncStorage.setItem(PLATFORM_KEY, p).catch(() => {});
+  }
+  // Request with the current platform added (friendlies, swap, help, dm.open)
+  requestHere(type, data = {}) { return this.request(type, { platform: this.state.platform, ...data }); }
+
   unread(dm) { return dm.lastId > (this.state.read[dm.room] || 0) ? 1 : 0; }
 
   async uploadImage(uri) {
@@ -179,3 +193,6 @@ export function useChat() {
 }
 
 export const isMuted = me => !!me?.sanction?.muted_until && me.sanction.muted_until > Date.now();
+
+// The list of friendlies / swap / help for the platform the player is looking at.
+export const listHere = (st, key) => st[key]?.[st.platform] || [];

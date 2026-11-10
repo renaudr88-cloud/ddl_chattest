@@ -29,6 +29,9 @@ const CFG = {
   secret: process.env.CHAT_SECRET || '',
   uploadBase: process.env.UPLOAD_BASE_URL || '',
   rateMax: +(process.env.RATE_LIMIT || 6), // posts per 6 seconds per player
+  // Each platform gets its own General chat, Friendlies, Dartswap, Help desk and private chats.
+  // Add one later (e.g. dartcounter) by adding it here and in app/src/config.js.
+  platforms: (process.env.PLATFORMS || 'dartsmind,scolia').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
   origins: (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean),
 };
 if (CFG.secret.length < 32) { console.error('CHAT_SECRET must be set (32+ characters, same value as in php/chat-config.php)'); process.exit(1); }
@@ -70,9 +73,16 @@ const sanctionOf = id => {
   };
 };
 const isAdmin = id => users.get(id)?.role === 'admin';
-const dmRoom = (a, b) => 'dm:' + [String(a), String(b)].sort().join(':');
-const dmMembers = room => room.split(':').slice(1);
-const canSee = (room, uid) => room === 'general' || (room.startsWith('dm:') && dmMembers(room).includes(uid));
+// Rooms: "general:<platform>" and "dm:<platform>:<idA>:<idB>" (ids sorted)
+const isPlatform = p => CFG.platforms.includes(p);
+function platformArg(p) { p = String(p || '').toLowerCase(); if (!isPlatform(p)) fail('bad_platform', 'Pick Dartsmind or Scolia first.'); return p; }
+const generalRoom = p => 'general:' + p;
+const dmRoom = (p, a, b) => `dm:${p}:` + [String(a), String(b)].sort().join(':');
+const roomPlatform = room => room.split(':')[1];
+const dmMembers = room => room.split(':').slice(2);
+const isGeneral = room => room.startsWith('general:') && isPlatform(roomPlatform(room));
+const canSee = (room, uid) => isGeneral(room) ||
+  (room.startsWith('dm:') && isPlatform(roomPlatform(room)) && dmMembers(room).length === 2 && dmMembers(room).includes(uid));
 
 function send(ws, obj) { if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj)); }
 function sendTo(uid, obj) { for (const ws of sockets.get(uid) || []) send(ws, obj); }
@@ -83,7 +93,7 @@ function broadcast(obj, onlyAdmins = false) {
     for (const ws of set) if (ws.readyState === WebSocket.OPEN) ws.send(data);
   }
 }
-function toRoom(room, obj) { room === 'general' ? broadcast(obj) : dmMembers(room).forEach(u => sendTo(u, obj)); }
+function toRoom(room, obj) { isGeneral(room) ? broadcast(obj) : dmMembers(room).forEach(u => sendTo(u, obj)); }
 
 function rateOk(uid, max = CFG.rateMax, windowMs = 6000) {
   const t = now();
@@ -112,20 +122,20 @@ function checkImage(url) {
 
 /* ---------------- output shapes ---------------- */
 const outMsg = m => ({ id: +m.id, room: m.room, user: pubUser(m.user_id), text: m.body || '', imageUrl: m.image_url || null, ts: +m.created_at });
-const outFriendly = f => ({ id: f.id, user: pubUser(f.user_id), format: f.format, custom: f.custom || '', game: f.game, note: f.note || '',
+const outFriendly = f => ({ id: f.id, platform: f.platform, user: pubUser(f.user_id), format: f.format, custom: f.custom || '', game: f.game, note: f.note || '',
   status: f.status, matchedWith: f.matched_with ? pubUser(f.matched_with) : null, ts: +f.created_at });
-const outSwap = s => ({ id: s.id, user: pubUser(s.user_id), kind: s.kind, title: s.title, price: s.price || '', cond: s.cond,
+const outSwap = s => ({ id: s.id, platform: s.platform, user: pubUser(s.user_id), kind: s.kind, title: s.title, price: s.price || '', cond: s.cond,
   desc: s.descr || '', imageUrl: s.image_url || null, status: s.status, ts: +s.created_at });
-const outHelp = h => ({ id: h.id, user: pubUser(h.user_id), text: h.question, status: h.status, ts: +h.created_at,
+const outHelp = h => ({ id: h.id, platform: h.platform, user: pubUser(h.user_id), text: h.question, status: h.status, ts: +h.created_at,
   answers: (h.answers || []).map(a => ({ user: pubUser(a.user_id), text: a.body, ts: +a.created_at })) });
 
-const pushFriendlies = async () => broadcast({ type: 'friendlies', list: (await db.friendlies.list()).map(outFriendly) });
-const pushSwap = async () => broadcast({ type: 'swap', list: (await db.swap.list()).map(outSwap) });
+const pushFriendlies = async p => broadcast({ type: 'friendlies', platform: p, list: (await db.friendlies.list(p)).map(outFriendly) });
+const pushSwap = async p => broadcast({ type: 'swap', platform: p, list: (await db.swap.list(p)).map(outSwap) });
 // Players see their own questions plus solved ones (a public FAQ). Staff see everything.
 const helpFor = (uid, all) => all.filter(h => isAdmin(uid) || h.status === 'solved' || h.user_id === uid).map(outHelp);
-async function pushHelp() {
-  const all = await db.help.list();
-  for (const uid of sockets.keys()) sendTo(uid, { type: 'help', list: helpFor(uid, all) });
+async function pushHelp(p) {
+  const all = await db.help.list(p);
+  for (const uid of sockets.keys()) sendTo(uid, { type: 'help', platform: p, list: helpFor(uid, all) });
 }
 async function pushLog() { broadcast({ type: 'modlog', list: await modLog() }, true); }
 async function modLog() {
@@ -133,9 +143,9 @@ async function modLog() {
     target: l.target_id ? pubUser(l.target_id) : null, detail: l.detail || '', ts: +l.created_at }));
 }
 async function dmList(uid) {
-  return (await db.dmRooms(uid)).map(r => {
+  return (await db.dmRooms(uid)).filter(r => canSee(r.room, uid)).map(r => {
     const other = dmMembers(r.room).find(x => x !== uid) || uid;
-    return { room: r.room, other: pubUser(other), lastId: +r.last_id, lastAt: +r.last_at, online: sockets.has(other) };
+    return { room: r.room, platform: roomPlatform(r.room), other: pubUser(other), lastId: +r.last_id, lastAt: +r.last_at, online: sockets.has(other) };
   });
 }
 async function postMessage(room, uid, text, imageUrl) {
@@ -173,14 +183,15 @@ const H = {
     if (m.user_id !== uid && !isAdmin(uid)) fail('forbidden', 'You can only delete your own messages.');
     await db.markDeleted(m.id);
     toRoom(m.room, { type: 'deleted', id: +m.id, room: m.room });
-    if (m.user_id !== uid) { await db.log.add({ admin_id: uid, action: 'delete', target_id: m.user_id, detail: (m.body || '[picture]').slice(0, 120), created_at: now() }); await pushLog(); }
+    if (m.user_id !== uid) { await db.log.add({ admin_id: uid, action: 'delete', target_id: m.user_id, detail: `[${roomPlatform(m.room)}] ` + (m.body || '[picture]').slice(0, 110), created_at: now() }); await pushLog(); }
     return {};
   },
 
-  async 'dm.open'(uid, { userId }) {
+  async 'dm.open'(uid, { userId, platform }) {
+    const p = platformArg(platform);
     userId = String(userId || '');
     if (!users.has(userId) || userId === uid) fail('not_found', 'Player not found.');
-    const room = dmRoom(uid, userId);
+    const room = dmRoom(p, uid, userId);
     return { room, other: pubUser(userId), online: sockets.has(userId), ...(await H.history(uid, { room })) };
   },
   async 'dm.list'(uid) { return { list: await dmList(uid) }; },
@@ -195,16 +206,17 @@ const H = {
   },
 
   /* friendlies */
-  async 'friendly.post'(uid, { format, custom, game, note }) {
+  async 'friendly.post'(uid, { platform, format, custom, game, note }) {
+    const p = platformArg(platform);
     if (!['FT3', 'FT5', 'Other'].includes(format)) fail('bad_input', 'Pick FT3, FT5 or Other.');
     custom = format === 'Other' ? str(custom, 40) : '';
     if (format === 'Other' && !custom) fail('bad_input', 'Describe the format, for example "Best of 7 sets".');
     game = ['501', '301', '701', 'Cricket'].includes(game) ? game : '501';
     note = str(note, 120);
     canPost(uid); clean(custom + ' ' + note);
-    await db.friendlies.cancelOpenBy(uid); // one open friendly per player
-    const id = await db.friendlies.add({ user_id: uid, format, custom: custom || null, game, note: note || null, status: 'open', created_at: now() });
-    await pushFriendlies();
+    await db.friendlies.cancelOpenBy(uid, p); // one open friendly per player per platform
+    const id = await db.friendlies.add({ platform: p, user_id: uid, format, custom: custom || null, game, note: note || null, status: 'open', created_at: now() });
+    await pushFriendlies(p);
     return { id };
   },
   async 'friendly.cancel'(uid, { id }) {
@@ -212,7 +224,7 @@ const H = {
     if (!f || f.status !== 'open') return {};
     if (f.user_id !== uid && !isAdmin(uid)) fail('forbidden', 'This is not your friendly.');
     await db.friendlies.update(f.id, { status: 'cancelled' });
-    await pushFriendlies();
+    await pushFriendlies(f.platform);
     return {};
   },
   async 'friendly.accept'(uid, { id }) {
@@ -221,47 +233,49 @@ const H = {
     if (f.user_id === uid) fail('forbidden', 'You cannot accept your own friendly.');
     canPost(uid);
     await db.friendlies.update(f.id, { status: 'matched', matched_with: uid });
-    const room = dmRoom(uid, f.user_id);
+    const room = dmRoom(f.platform, uid, f.user_id);
     const fmt = f.format === 'Other' ? f.custom : f.format;
     await postMessage(room, uid, `🎯 I accepted your ${fmt} friendly (${f.game}). Ready when you are!`, null);
-    await pushFriendlies();
+    await pushFriendlies(f.platform);
     return { room, other: pubUser(f.user_id) };
   },
 
   /* dartswap */
-  async 'swap.post'(uid, { kind, title, price, cond, desc, imageUrl }) {
+  async 'swap.post'(uid, { platform, kind, title, price, cond, desc, imageUrl }) {
+    const p = platformArg(platform);
     if (!['Sell', 'Swap', 'Wanted'].includes(kind)) fail('bad_input', 'Pick Sell, Swap or Wanted.');
     title = str(title, 70); desc = str(desc, 400); cond = str(cond, 20) || 'Used';
     price = kind === 'Sell' ? str(price, 12).replace(/[^\d.,]/g, '') : '';
     if (!title) fail('bad_input', 'Add a title.');
     canPost(uid); clean(title + ' ' + desc, 'Your listing');
-    const id = await db.swap.add({ user_id: uid, kind, title, price: price || null, cond, descr: desc || null,
+    const id = await db.swap.add({ platform: p, user_id: uid, kind, title, price: price || null, cond, descr: desc || null,
       image_url: checkImage(imageUrl), status: 'open', created_at: now() });
-    await pushSwap();
+    await pushSwap(p);
     return { id };
   },
   async 'swap.done'(uid, { id }) {
     const s = await db.swap.get(+id);
     if (!s) return {};
     if (s.user_id !== uid) fail('forbidden', 'This is not your listing.');
-    await db.swap.update(s.id, { status: 'done' }); await pushSwap(); return {};
+    await db.swap.update(s.id, { status: 'done' }); await pushSwap(s.platform); return {};
   },
   async 'swap.delete'(uid, { id }) {
     const s = await db.swap.get(+id);
     if (!s) return {};
     if (s.user_id !== uid && !isAdmin(uid)) fail('forbidden', 'This is not your listing.');
     await db.swap.update(s.id, { status: 'deleted' });
-    if (s.user_id !== uid) { await db.log.add({ admin_id: uid, action: 'swap_delete', target_id: s.user_id, detail: s.title, created_at: now() }); await pushLog(); }
-    await pushSwap(); return {};
+    if (s.user_id !== uid) { await db.log.add({ admin_id: uid, action: 'swap_delete', target_id: s.user_id, detail: `[${s.platform}] ${s.title}`, created_at: now() }); await pushLog(); }
+    await pushSwap(s.platform); return {};
   },
 
   /* help desk */
-  async 'help.ask'(uid, { text }) {
+  async 'help.ask'(uid, { platform, text }) {
+    const p = platformArg(platform);
     text = str(text, 300);
     if (!isQuestion(text)) fail('not_question', 'The help desk is for questions only. Ask a question, or use General chat.');
     canPost(uid); clean(text, 'Your question');
-    const id = await db.help.add({ user_id: uid, question: text, status: 'open', created_at: now() });
-    await pushHelp();
+    const id = await db.help.add({ platform: p, user_id: uid, question: text, status: 'open', created_at: now() });
+    await pushHelp(p);
     return { id };
   },
   async 'help.answer'(uid, { id, text }) {
@@ -272,22 +286,22 @@ const H = {
     const h = await db.help.get(+id); if (!h) fail('not_found', 'Question not found.');
     await db.help.addAnswer({ help_id: h.id, user_id: uid, body: text, created_at: now() });
     await db.help.update(h.id, { status: 'solved' });
-    await pushHelp(); return {};
+    await pushHelp(h.platform); return {};
   },
   async 'help.status'(uid, { id, status }) {
     const h = await db.help.get(+id); if (!h) return {};
     const own = h.user_id === uid;
     if (!isAdmin(uid) && !(own && status === 'solved')) fail('forbidden', 'Only staff can change this.');
     if (!['open', 'solved', 'deleted'].includes(status)) fail('bad_input', 'Unknown status.');
-    await db.help.update(h.id, { status }); await pushHelp(); return {};
+    await db.help.update(h.id, { status }); await pushHelp(h.platform); return {};
   },
   async 'help.private'(uid, { id }) {
     if (!isAdmin(uid)) fail('forbidden', 'Only staff can do this.');
     const h = await db.help.get(+id); if (!h) fail('not_found', 'Question not found.');
-    const room = dmRoom(uid, h.user_id);
+    const room = dmRoom(h.platform, uid, h.user_id);
     await postMessage(room, uid, `About your help desk question: “${h.question}”\nLet's sort it out here.`, null);
     await db.help.addAnswer({ help_id: h.id, user_id: uid, body: 'Continued in a private chat.', created_at: now() });
-    await pushHelp();
+    await pushHelp(h.platform);
     return { room, other: pubUser(h.user_id) };
   },
 
@@ -346,18 +360,26 @@ async function onAuth(ws, token) {
   if (first) sockets.set(u.id, new Set());
   sockets.get(u.id).add(ws);
 
-  const [general, friendlies, swap, help, dms] = await Promise.all([
-    db.history('general', 0, 50), db.friendlies.list(), db.swap.list(), db.help.list(), dmList(u.id)]);
+  // Everything per platform: { dartsmind: [...], scolia: [...] }
+  const per = {};
+  await Promise.all(CFG.platforms.map(async p => {
+    const [general, friendlies, swap, help] = await Promise.all([
+      db.history(generalRoom(p), 0, 50), db.friendlies.list(p), db.swap.list(p), db.help.list(p)]);
+    per[p] = { general: general.map(outMsg), generalMore: general.length === 50,
+      friendlies: friendlies.map(outFriendly), swap: swap.map(outSwap), help: helpFor(u.id, help) };
+  }));
+  const pick = k => Object.fromEntries(CFG.platforms.map(p => [p, per[p][k]]));
   send(ws, {
     type: 'ready',
     me: { ...pubUser(u.id), sanction: st },
     online: sockets.size,
-    general: general.map(outMsg),
-    generalMore: general.length === 50,
-    friendlies: friendlies.map(outFriendly),
-    swap: swap.map(outSwap),
-    help: helpFor(u.id, help),
-    dms,
+    platforms: CFG.platforms,
+    general: pick('general'),
+    generalMore: pick('generalMore'),
+    friendlies: pick('friendlies'),
+    swap: pick('swap'),
+    help: pick('help'),
+    dms: await dmList(u.id),
   });
   if (first) broadcast({ type: 'presence', online: sockets.size, userId: u.id, status: 'online' });
 }

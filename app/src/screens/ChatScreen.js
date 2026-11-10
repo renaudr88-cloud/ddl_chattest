@@ -85,7 +85,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
         <View style={styles.row}>
           <TouchableOpacity style={styles.icon} onPress={pick} disabled={muted} accessibilityLabel="Add a picture"><Text style={{ fontSize: 20 }}>📷</Text></TouchableOpacity>
           <TextInput style={styles.input} value={text} onChangeText={setText} multiline maxLength={1000} editable={!muted}
-            placeholder={room === 'general' ? 'Message the DDL community…' : 'Write a private message…'} placeholderTextColor={C.muted} />
+            placeholder={room.startsWith('general:') ? 'Message the community…' : 'Write a private message…'} placeholderTextColor={C.muted} />
           <TouchableOpacity style={[styles.send, (muted || sending) && { opacity: 0.45 }]} onPress={send} disabled={muted || sending}>
             {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendTxt}>SEND</Text>}
           </TouchableOpacity>

@@ -54,7 +54,7 @@ Upload re-encodes every picture with GD, which strips EXIF/GPS data and anything
 cd server
 cp .env.example .env      # fill in CHAT_SECRET, DB_*, UPLOAD_BASE_URL
 npm install
-npm test                  # 28 end-to-end checks against an in-memory database
+npm test                  # 39 end-to-end checks against an in-memory database
 npm start                 # listens on PORT (default 8080), path /chat
 ```
 
@@ -88,6 +88,19 @@ Set the three URLs in `src/config.js`. Your `LoginScreen` is kept and wired to `
 Colours live in `src/theme.js` (two palettes; styles are built with `themed(C => ({…}))` so they follow the chosen background). No navigation library is needed; tabs live in `src/screens/HomeScreen.js`.
 Image picking uses `mediaTypes: ['images']` (Expo SDK 52+).
 
+## Platforms (Dartsmind, Scolia)
+
+Every platform has its **own** General chat, Friendlies, Dartswap, Help desk and private chats, so
+nothing gets mixed up. Players switch with the bar at the top of the app; the app remembers the last one.
+Shared across platforms: the DDL account, and mute / kick / ban (a muted player is muted everywhere).
+
+- Server: `PLATFORMS=dartsmind,scolia` in `server/.env`
+- App: `src/platforms.js` (name, colour, logo). Logos are in `app/assets/` (dartsmind.png, scolia.png).
+- Rooms are named `general:<platform>` and `dm:<platform>:<idA>:<idB>`; friendlies, swap and help
+  rows carry a `platform` column. Requests `dm.open`, `friendly.post`, `swap.post` and `help.ask`
+  take a `platform` field; pushed `friendlies` / `swap` / `help` events say which platform they are for.
+- Adding DartCounter later: add `dartcounter` to `PLATFORMS` and one line in `src/platforms.js`.
+
 ## Features and where they live
 
 | Feature | Server (enforced) | App |
@@ -111,21 +124,22 @@ Client sends `{type, rid, ...}`; the server replies `{type:"ack", rid, data}` or
 `{type:"error", rid, code, message}` (the message is ready to show to the player).
 
 First message must be `{type:"auth", token}` (within 10 s). The server answers with `ready`:
-`{me, online, general, generalMore, friendlies, swap, help, dms}`.
+`{me, online, platforms, general, generalMore, friendlies, swap, help, dms}`, where general/friendlies/swap/help
+are objects keyed by platform (`{dartsmind: [...], scolia: [...]}`).
 
 | Request | Fields | Who |
 |---|---|---|
 | `history` | `room`, `before?` (message id) | room members |
 | `send` | `room`, `text`, `imageUrl?` | room members, not muted |
 | `delete` | `id` | author or staff |
-| `dm.open` | `userId` | anyone |
+| `dm.open` | `userId`, `platform` | anyone |
 | `dm.list` | | anyone |
 | `users.search` | `q` | anyone |
-| `friendly.post` | `format` FT3/FT5/Other, `custom?`, `game`, `note?` | anyone |
+| `friendly.post` | `platform`, `format` FT3/FT5/Other, `custom?`, `game`, `note?` | anyone |
 | `friendly.accept` / `friendly.cancel` | `id` | others / owner or staff |
-| `swap.post` | `kind`, `title`, `price?`, `cond`, `desc?`, `imageUrl?` | anyone |
+| `swap.post` | `platform`, `kind`, `title`, `price?`, `cond`, `desc?`, `imageUrl?` | anyone |
 | `swap.done` / `swap.delete` | `id` | owner / owner or staff |
-| `help.ask` | `text` (must be a question) | anyone |
+| `help.ask` | `platform`, `text` (must be a question) | anyone |
 | `help.answer` / `help.private` | `id`, `text` | staff |
 | `help.status` | `id`, `status` open/solved/deleted | staff (owner may mark solved) |
 | `admin.members` | | staff |

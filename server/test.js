@@ -61,55 +61,77 @@ const rejects = async (p, code, label) => { try { await p; ok(false, label); } c
     const r2 = await kev.next('ready');
     ok(r2.me.name === 'Kevin V.', 'player logs in');
 
+    ok(JSON.stringify(r2.platforms) === '["dartsmind","scolia"]', 'both platforms announced');
+    const DM = 'dartsmind', SC = 'scolia';
+    const GD = 'general:dartsmind', GS = 'general:scolia';
+
     console.log('General chat');
-    await kev.req('send', { room: 'general', text: 'Evening all! Who plays tonight?' });
+    await kev.req('send', { room: GD, text: 'Evening all! Who plays tonight?' });
     const m = await admin.next('message');
     ok(m.message.text.includes('Evening') && m.message.user.name === 'Kevin V.', 'message reaches the other player live');
-    await kev.req('send', { room: 'general', text: 'pic', imageUrl: UPLOAD + 'abc.jpg' });
+    await kev.req('send', { room: GD, text: 'pic', imageUrl: UPLOAD + 'abc.jpg' });
     ok((await admin.next('message')).message.imageUrl === UPLOAD + 'abc.jpg', 'picture message delivered');
-    await rejects(kev.req('send', { room: 'general', text: 'look', imageUrl: 'https://evil.example/x.jpg' }), 'bad_image', 'foreign picture URL refused');
-    await rejects(kev.req('send', { room: 'general', text: 'what the f.u.c.k' }), 'blocked_word', 'bad word blocked (English, split up)');
-    await rejects(kev.req('send', { room: 'general', text: 'jij k4nker' }), 'blocked_word', 'bad word blocked (Dutch, leetspeak)');
-    const h = await kev.req('history', { room: 'general' });
+    await rejects(kev.req('send', { room: GD, text: 'look', imageUrl: 'https://evil.example/x.jpg' }), 'bad_image', 'foreign picture URL refused');
+    await rejects(kev.req('send', { room: GD, text: 'what the f.u.c.k' }), 'blocked_word', 'bad word blocked (English, split up)');
+    await rejects(kev.req('send', { room: GD, text: 'jij k4nker' }), 'blocked_word', 'bad word blocked (Dutch, leetspeak)');
+    const h = await kev.req('history', { room: GD });
     ok(h.messages.length === 2, 'history returns the stored messages');
 
+    console.log('Platforms stay separate');
+    await kev.req('send', { room: GS, text: 'Scolia crew, anyone online?' });
+    ok((await admin.next('message')).message.room === GS, 'Scolia message goes to the Scolia room');
+    ok((await kev.req('history', { room: GS })).messages.length === 1, 'Scolia chat has only its own message');
+    ok((await kev.req('history', { room: GD })).messages.length === 2, 'Dartsmind chat unchanged');
+    await rejects(kev.req('send', { room: 'general', text: 'hi' }), 'forbidden', 'old room without platform refused');
+    await rejects(kev.req('send', { room: 'general:dartcounter', text: 'hi' }), 'forbidden', 'unknown platform refused');
+
     console.log('Private chat');
-    const dm = await admin.req('dm.open', { userId: '3' });
+    const dm = await admin.req('dm.open', { userId: '3', platform: DM });
+    ok(dm.room === 'dm:dartsmind:1:3', 'private chat belongs to one platform');
     await admin.req('send', { room: dm.room, text: 'Hi Kevin, welcome!' });
     ok(!!(await kev.next('message', e => e.message.room === dm.room)), 'private message delivered to recipient');
+    const dmS = await admin.req('dm.open', { userId: '3', platform: SC });
+    ok(dmS.room !== dm.room && dmS.messages.length === 0, 'Scolia private chat is a separate conversation');
+    await rejects(admin.req('dm.open', { userId: '3' }), 'bad_platform', 'private chat needs a platform');
     const outsider = await client(token(9, 'Tom B.', 'player')); await outsider.next('ready');
     await rejects(outsider.req('history', { room: dm.room }), 'forbidden', 'outsider cannot read the private chat');
-    ok((await kev.req('dm.list')).list[0].other.name === 'Renaud', 'private chat appears in the list');
+    const dl = (await kev.req('dm.list')).list;
+    ok(dl[0].other.name === 'Renaud' && dl[0].platform === DM, 'private chat appears in the list with its platform');
 
     console.log('Friendlies');
-    const f = await kev.req('friendly.post', { format: 'FT5', game: '501', note: 'warm-up' });
-    ok((await admin.next('friendlies')).list[0].format === 'FT5', 'friendly card broadcast');
+    const f = await kev.req('friendly.post', { platform: DM, format: 'FT5', game: '501', note: 'warm-up' });
+    const fe = await admin.next('friendlies');
+    ok(fe.platform === DM && fe.list[0].format === 'FT5', 'friendly card broadcast on Dartsmind');
+    await kev.req('friendly.post', { platform: SC, format: 'FT3', game: '501' });
+    const fs2 = await admin.next('friendlies');
+    ok(fs2.platform === SC && fs2.list.length === 1 && fs2.list[0].format === 'FT3', 'Scolia friendly listed separately, Dartsmind one still open');
     const acc = await outsider.req('friendly.accept', { id: f.id });
-    ok(acc.other.name === 'Kevin V.', 'friendly accepted, private chat opened');
+    ok(acc.other.name === 'Kevin V.' && acc.room.startsWith('dm:dartsmind:'), 'friendly accepted, Dartsmind private chat opened');
     await rejects(admin.req('friendly.accept', { id: f.id }), 'gone', 'cannot accept a taken friendly');
 
     console.log('Dartswap');
-    const s = await kev.req('swap.post', { kind: 'Sell', title: 'Target 23g', price: '€65', cond: 'Used – good', desc: 'with case' });
+    const s = await kev.req('swap.post', { platform: SC, kind: 'Sell', title: 'Target 23g', price: '€65', cond: 'Used – good', desc: 'with case' });
     const sw = await admin.next('swap');
-    ok(sw.list[0].price === '65', 'listing broadcast with clean price');
+    ok(sw.platform === SC && sw.list[0].price === '65', 'listing broadcast on Scolia with clean price');
     await kev.req('swap.done', { id: s.id });
 
     console.log('Help desk');
-    await rejects(kev.req('help.ask', { text: 'hello everyone nice day' }), 'not_question', 'non-question refused');
-    const q = await kev.req('help.ask', { text: 'How do I report a no-show?' });
+    await rejects(kev.req('help.ask', { platform: DM, text: 'hello everyone nice day' }), 'not_question', 'non-question refused');
+    const q = await kev.req('help.ask', { platform: DM, text: 'How do I report a no-show?' });
     await rejects(outsider.req('help.answer', { id: q.id, text: 'dunno' }), 'forbidden', 'players cannot answer');
     await admin.req('help.answer', { id: q.id, text: 'Use the report button on the match page.' });
-    const hl = (await admin.req('admin.members')) && (await kev.next('help'));
-    ok(hl.list.find(x => x.id === q.id), 'help list updates');
+    const hl = await kev.next('help', e => e.list.some(x => x.id === q.id && x.status === 'solved'));
+    ok(hl.platform === DM, 'help list updates on the right platform');
     const pv = await admin.req('help.private', { id: q.id });
-    ok(pv.other.name === 'Kevin V.', 'admin moved question to private chat');
+    ok(pv.other.name === 'Kevin V.' && pv.room === dm.room, 'admin moved question to the Dartsmind private chat');
 
     console.log('Rate limit is configurable (RATE_LIMIT, default 6 posts / 6 s)');
     console.log('Moderation');
     await rejects(kev.req('mod', { action: 'ban', userId: '9' }), 'forbidden', 'players cannot moderate');
     await admin.req('mod', { action: 'mute', userId: '3', minutes: 10 });
     ok((await kev.next('sanction')).sanction.muted_until > Date.now(), 'mute reaches the player');
-    await rejects(kev.req('send', { room: 'general', text: 'hello?' }), 'muted', 'muted player cannot post');
+    await rejects(kev.req('send', { room: GD, text: 'hello?' }), 'muted', 'muted player cannot post');
+    await rejects(kev.req('send', { room: GS, text: 'hello?' }), 'muted', 'mute also applies on the other platform');
     await admin.req('mod', { action: 'unmute', userId: '3' });
     await admin.req('mod', { action: 'kick', userId: '3' });
     ok((await kev.next('blocked')).reason === 'kicked', 'kicked player is disconnected');

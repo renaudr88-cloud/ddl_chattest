@@ -1,8 +1,9 @@
 // Main shell: bottom tabs + private chat overlay + member sheet. No navigation library needed.
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Modal, Pressable } from 'react-native';
-import { chat, useChat } from '../chat';
-import { Btn, clock, showError } from '../components';
+import { chat, useChat, listHere } from '../chat';
+import { PLATFORMS, platformInfo } from '../platforms';
+import { Btn, clock, showError, PlatformLogo } from '../components';
 import { C, themed, useTheme, setTheme, THEMES, PALETTES } from '../theme';
 import ChatScreen from './ChatScreen';
 import MessagesScreen from './MessagesScreen';
@@ -45,13 +46,18 @@ export default function HomeScreen() {
 
   const openDM = (room, other) => { setSheet(null); setAdmin(false); setDm({ room, other }); };
   const chatWith = async user => {
-    try { const r = await chat.request('dm.open', { userId: user.id }); openDM(r.room, r.other); } catch (e) { showError(e); }
+    try { const r = await chat.requestHere('dm.open', { userId: user.id }); openDM(r.room, r.other); } catch (e) { showError(e); }
   };
   // onUser(user, true) jumps straight into a private chat; onUser(user) opens the player card
   const onUser = (user, direct) => (direct ? chatWith(user) : setSheet(user));
   const isAdmin = st.me?.role === 'admin';
-  const unreadDMs = st.dms.filter(d => chat.unread(d)).length;
-  const openHelp = st.help.filter(h => h.status === 'open').length;
+  const here = platformInfo(st.platform);
+  // Per platform: unread private chats, and open help questions for staff
+  const unreadOn = p => st.dms.filter(d => d.platform === p && chat.unread(d)).length;
+  const openHelpOn = p => isAdmin ? (st.help[p] || []).filter(h => h.status === 'open').length : 0;
+  const unreadDMs = unreadOn(st.platform);
+  const openHelp = openHelpOn(st.platform);
+  const switchPlatform = p => { setDm(null); chat.setPlatform(p); };
 
   const headerRight = (
     <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
@@ -62,9 +68,9 @@ export default function HomeScreen() {
   );
 
   let body;
-  if (dm) body = <ChatScreen room={dm.room} title={dm.other.name} subtitle={dm.other.role === 'admin' ? 'Private chat · DDL staff' : 'Private chat'} onBack={() => { setDm(null); setTab('messages'); }} onUser={onUser} />;
+  if (dm) body = <ChatScreen room={dm.room} title={dm.other.name} subtitle={`Private chat · ${platformInfo(dm.room.split(':')[1]).name}${dm.other.role === 'admin' ? ' · DDL staff' : ''}`} onBack={() => { setDm(null); setTab('messages'); }} onUser={onUser} />;
   else if (admin) body = <AdminScreen onBack={() => setAdmin(false)} onUser={setSheet} />;
-  else if (tab === 'general') body = <ChatScreen room="general" title="General chat" subtitle="Everything darts. Keep it friendly." onUser={onUser} right={headerRight} />;
+  else if (tab === 'general') body = <ChatScreen key={st.platform} room={'general:' + st.platform} title="General chat" subtitle={`${here.name} community. Keep it friendly.`} onUser={onUser} right={headerRight} />;
   else if (tab === 'messages') body = <MessagesScreen onOpen={openDM} />;
   else if (tab === 'friendlies') body = <FriendliesScreen onOpenDM={openDM} onUser={onUser} />;
   else if (tab === 'swap') body = <SwapScreen onUser={onUser} />;
@@ -72,6 +78,21 @@ export default function HomeScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.navy }}>
+      {!admin && (
+        <View style={styles.platBar} accessibilityRole="tablist">
+          {PLATFORMS.map(p => {
+            const on = st.platform === p.key;
+            const dot = !on && (unreadOn(p.key) + openHelpOn(p.key)) > 0;
+            return (
+              <TouchableOpacity key={p.key} onPress={() => switchPlatform(p.key)} style={[styles.plat, on && styles.platOn]}
+                accessibilityRole="tab" accessibilityState={{ selected: on }} accessibilityLabel={p.name}>
+                <PlatformLogo platform={p} size={24} />
+                <Text style={[styles.platTxt, on && { color: C.white }]}>{p.name}</Text>
+                {dot && <View style={styles.platDot} />}
+              </TouchableOpacity>);
+          })}
+        </View>
+      )}
       <View style={{ flex: 1 }}>{body}</View>
       {!dm && !admin && (
         <View style={styles.tabs}>
@@ -125,6 +146,11 @@ function Settings({ visible, theme, onClose }) {
 }
 
 const styles = themed(C => ({
+  platBar: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, backgroundColor: C.navy },
+  plat: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 8, borderRadius: 10, borderWidth: 2, borderColor: 'rgba(255,255,255,0.12)' },
+  platOn: { borderColor: C.orange, backgroundColor: C.navy2 },
+  platTxt: { color: C.barMuted, fontWeight: '800', fontSize: 15, letterSpacing: 0.5 },
+  platDot: { position: 'absolute', top: 6, right: 10, width: 9, height: 9, borderRadius: 5, backgroundColor: C.orange },
   tabs: { flexDirection: 'row', backgroundColor: C.navy, borderTopWidth: 1, borderTopColor: C.line, paddingBottom: 6 },
   tab: { flex: 1, alignItems: 'center', paddingTop: 8, paddingBottom: 4 },
   tabIc: { color: C.barMuted, fontSize: 18, fontWeight: '900' },

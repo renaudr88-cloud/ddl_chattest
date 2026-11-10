@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS chat_users (
   KEY idx_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- room = 'general' or 'dm:<idA>:<idB>' (ids sorted)
+-- Platforms (dartsmind, scolia, ...) each have their own rooms, friendlies, Dartswap and help desk.
+-- room = 'general:<platform>' or 'dm:<platform>:<idA>:<idB>' (ids sorted)
 CREATE TABLE IF NOT EXISTS chat_messages (
   id          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   room        VARCHAR(140) NOT NULL,
@@ -26,6 +27,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 CREATE TABLE IF NOT EXISTS chat_friendlies (
   id           INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  platform     VARCHAR(20)  NOT NULL,
   user_id      VARCHAR(64)  NOT NULL,
   format       ENUM('FT3','FT5','Other') NOT NULL,
   custom       VARCHAR(40)  NULL,
@@ -34,11 +36,12 @@ CREATE TABLE IF NOT EXISTS chat_friendlies (
   status       ENUM('open','matched','cancelled') NOT NULL DEFAULT 'open',
   matched_with VARCHAR(64)  NULL,
   created_at   BIGINT       NOT NULL,
-  KEY idx_status (status, created_at)
+  KEY idx_platform_status (platform, status, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS chat_swap (
   id          INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  platform     VARCHAR(20)  NOT NULL,
   user_id     VARCHAR(64)  NOT NULL,
   kind        ENUM('Sell','Swap','Wanted') NOT NULL,
   title       VARCHAR(70)  NOT NULL,
@@ -48,16 +51,17 @@ CREATE TABLE IF NOT EXISTS chat_swap (
   image_url   VARCHAR(255) NULL,
   status      ENUM('open','done','deleted') NOT NULL DEFAULT 'open',
   created_at  BIGINT       NOT NULL,
-  KEY idx_status (status, created_at)
+  KEY idx_platform_status (platform, status, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS chat_help (
   id          INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  platform     VARCHAR(20)  NOT NULL,
   user_id     VARCHAR(64)  NOT NULL,
   question    VARCHAR(300) NOT NULL,
   status      ENUM('open','solved','deleted') NOT NULL DEFAULT 'open',
   created_at  BIGINT       NOT NULL,
-  KEY idx_status (status, created_at)
+  KEY idx_platform_status (platform, status, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS chat_help_answers (

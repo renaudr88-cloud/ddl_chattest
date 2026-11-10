@@ -8,7 +8,10 @@ Must handle ~1000 concurrent players and be very easy to use for all ages.
 - `php/` login + picture upload endpoints that run on the existing DDL PHP/MySQL site.
   PHP signs an HMAC token with `CHAT_SECRET`; the Node server verifies it. PHP and Node never call each other.
 - `sql/schema.sql` new `chat_*` tables only; never alter existing DDL tables.
-- `app/` Expo (React Native) screens; URLs in `app/src/config.js`, colours in `app/src/theme.js`.
+- `app/` Expo (React Native) screens; URLs in `app/src/config.js`, colours in `app/src/theme.js`,
+  platforms in `app/src/platforms.js`, login background in `app/assets/login-bg.jpg`.
+- Platforms (Dartsmind, Scolia): each has its own General chat, Friendlies, Dartswap, Help and private chats.
+  Only the account and mute/kick/ban are shared. Server list: `PLATFORMS` in `server/.env`; must match the app.
 - Protocol and features: `README.md`. Deployment order and current status: `NEXT_STEPS.md`.
 
 Rules:

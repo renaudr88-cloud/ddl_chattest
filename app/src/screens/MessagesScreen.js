@@ -18,7 +18,7 @@ export default function MessagesScreen({ onOpen }) {
   }, [q, searching]);
 
   const openUser = async u => {
-    try { const r = await chat.request('dm.open', { userId: u.id }); setSearching(false); setQ(''); onOpen(r.room, r.other); }
+    try { const r = await chat.requestHere('dm.open', { userId: u.id }); setSearching(false); setQ(''); onOpen(r.room, r.other); }
     catch (e) { showError(e); }
   };
 
@@ -39,7 +39,7 @@ export default function MessagesScreen({ onOpen }) {
               </TouchableOpacity>)} />
         </View>
       ) : (
-        <FlatList data={st.dms} keyExtractor={d => d.room}
+        <FlatList data={st.dms.filter(d => d.platform === st.platform)} keyExtractor={d => d.room}
           ListEmptyComponent={<Empty text="No private chats yet. Tap + New, or tap a player's name in General." />}
           renderItem={({ item: d }) => {
             const unread = chat.unread(d);

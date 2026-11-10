@@ -1,7 +1,7 @@
 // "Looking for a friendly": one simple card per player (FT3 / FT5 / Other). Others tap Accept → private chat opens.
 import { useState } from 'react';
 import { View, Text, ScrollView, TextInput } from 'react-native';
-import { chat, useChat, isMuted } from '../chat';
+import { chat, useChat, isMuted, listHere } from '../chat';
 import { hasBad } from '../filter';
 import { Avatar, Header, Btn, Chip, Pick, Empty, Notice, timeLabel, toast, showError, s as ui } from '../components';
 import { C } from '../theme';
@@ -15,15 +15,16 @@ export default function FriendliesScreen({ onOpenDM, onUser }) {
   const [busy, setBusy] = useState(false);
   const muted = isMuted(st.me);
   const admin = st.me?.role === 'admin';
-  const open = st.friendlies.filter(f => f.status === 'open');
-  const matched = st.friendlies.filter(f => f.status === 'matched');
+  const friendlies = listHere(st, 'friendlies');
+  const open = friendlies.filter(f => f.status === 'open');
+  const matched = friendlies.filter(f => f.status === 'matched');
   const mineOpen = open.find(f => f.user.id === st.me?.id);
 
   const post = async () => {
     if (format === 'Other' && !custom.trim()) return toast('Describe the format, for example "Best of 7 sets".', true);
     if (hasBad(custom + ' ' + note)) return toast('Blocked: that contains a word that is not allowed.', true);
     setBusy(true);
-    try { await chat.request('friendly.post', { format, custom, game, note }); setNote(''); setCustom(''); toast('You are now looking for a friendly.'); }
+    try { await chat.requestHere('friendly.post', { format, custom, game, note }); setNote(''); setCustom(''); toast('You are now looking for a friendly.'); }
     catch (e) { showError(e); }
     setBusy(false);
   };

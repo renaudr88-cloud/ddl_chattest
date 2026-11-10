@@ -1,7 +1,7 @@
 // Help desk: players can only ask questions. Staff answer in place or move the question to a private chat.
 import { useState } from 'react';
 import { View, Text, ScrollView, TextInput } from 'react-native';
-import { chat, useChat, isMuted } from '../chat';
+import { chat, useChat, isMuted, listHere } from '../chat';
 import { hasBad, isQuestion } from '../filter';
 import { Avatar, Header, Btn, Chip, Segmented, Empty, Notice, RoleTag, ConfirmBtn, timeLabel, toast, showError, s as ui } from '../components';
 import { C } from '../theme';
@@ -19,7 +19,7 @@ export default function HelpScreen({ onOpenDM }) {
     if (!isQuestion(q)) return toast('The help desk is for questions only. Ask a question, or use General chat.', true);
     if (hasBad(q)) return toast('Blocked: your question contains a word that is not allowed.', true);
     setBusy(true);
-    try { await chat.request('help.ask', { text: q }); setQ(''); setFilter('open'); toast('Question sent to the staff.'); }
+    try { await chat.requestHere('help.ask', { text: q }); setQ(''); setFilter('open'); toast('Question sent to the staff.'); }
     catch (e) { showError(e); }
     setBusy(false);
   };
@@ -34,7 +34,7 @@ export default function HelpScreen({ onOpenDM }) {
   const status = (h, s) => chat.request('help.status', { id: h.id, status: s }).catch(showError);
 
   // Players see open questions of their own + all solved ones (useful FAQ). Staff see everything.
-  const visible = st.help.filter(h => admin || h.status === 'solved' || h.user.id === st.me?.id);
+  const visible = listHere(st, 'help').filter(h => admin || h.status === 'solved' || h.user.id === st.me?.id);
   const list = visible.filter(h => filter === 'all' || h.status === filter);
   const count = k => visible.filter(h => k === 'all' || h.status === k).length;
 

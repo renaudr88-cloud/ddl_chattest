@@ -42,22 +42,22 @@ function mysqlDriver() {
       [`dm:${uid}:%`, `dm:%:${uid}`]),
 
     friendlies: {
-      list: () => q(`(SELECT * FROM chat_friendlies WHERE status='open' ORDER BY created_at DESC LIMIT 200)
-                     UNION ALL (SELECT * FROM chat_friendlies WHERE status='matched' ORDER BY created_at DESC LIMIT 10)`),
+      list: p => q(`(SELECT * FROM chat_friendlies WHERE platform=? AND status='open' ORDER BY created_at DESC LIMIT 200)
+                     UNION ALL (SELECT * FROM chat_friendlies WHERE platform=? AND status='matched' ORDER BY created_at DESC LIMIT 10)`, [p, p]),
       add: f => insert('chat_friendlies', f),
       get: id => get('chat_friendlies', id),
       update: (id, p) => update('chat_friendlies', id, p),
-      cancelOpenBy: uid => q(`UPDATE chat_friendlies SET status='cancelled' WHERE user_id=? AND status='open'`, [uid]),
+      cancelOpenBy: (uid, p) => q(`UPDATE chat_friendlies SET status='cancelled' WHERE user_id=? AND platform=? AND status='open'`, [uid, p]),
     },
     swap: {
-      list: () => q(`SELECT * FROM chat_swap WHERE status<>'deleted' ORDER BY status='done', created_at DESC LIMIT 150`),
+      list: p => q(`SELECT * FROM chat_swap WHERE platform=? AND status<>'deleted' ORDER BY status='done', created_at DESC LIMIT 150`, [p]),
       add: s => insert('chat_swap', s),
       get: id => get('chat_swap', id),
       update: (id, p) => update('chat_swap', id, p),
     },
     help: {
-      async list() {
-        const qs = await q(`SELECT * FROM chat_help WHERE status<>'deleted' ORDER BY created_at DESC LIMIT 150`);
+      async list(p) {
+        const qs = await q(`SELECT * FROM chat_help WHERE platform=? AND status<>'deleted' ORDER BY created_at DESC LIMIT 150`, [p]);
         if (!qs.length) return [];
         const ans = await q(`SELECT * FROM chat_help_answers WHERE help_id IN (?) ORDER BY id`, [qs.map(x => x.id)]);
         return qs.map(x => ({ ...x, answers: ans.filter(a => a.help_id === x.id) }));
@@ -104,30 +104,30 @@ function memoryDriver() {
     async dmRooms(uid) {
       const map = new Map();
       for (const m of T.chat_messages) {
-        if (!m.room.startsWith('dm:') || !m.room.split(':').slice(1).includes(uid)) continue;
+        if (!m.room.startsWith('dm:') || !m.room.split(':').slice(2).includes(uid)) continue;
         map.set(m.room, { room: m.room, last_id: m.id, last_at: m.created_at });
       }
       return [...map.values()].sort((a, b) => b.last_id - a.last_id);
     },
     friendlies: {
-      async list() {
-        const f = T.chat_friendlies;
+      async list(p) {
+        const f = T.chat_friendlies.filter(x => x.platform === p);
         return [...f.filter(x => x.status === 'open').sort(byNewest), ...f.filter(x => x.status === 'matched').sort(byNewest).slice(0, 10)];
       },
       async add(f) { return insert('chat_friendlies', { status: 'open', ...f }); },
       async get(id) { return get('chat_friendlies', id); },
       async update(id, p) { update('chat_friendlies', id, p); },
-      async cancelOpenBy(uid) { T.chat_friendlies.forEach(f => { if (f.user_id === uid && f.status === 'open') f.status = 'cancelled'; }); },
+      async cancelOpenBy(uid, p) { T.chat_friendlies.forEach(f => { if (f.user_id === uid && f.platform === p && f.status === 'open') f.status = 'cancelled'; }); },
     },
     swap: {
-      async list() { return T.chat_swap.filter(s => s.status !== 'deleted').sort((a, b) => (a.status === 'done') - (b.status === 'done') || byNewest(a, b)); },
+      async list(p) { return T.chat_swap.filter(s => s.platform === p && s.status !== 'deleted').sort((a, b) => (a.status === 'done') - (b.status === 'done') || byNewest(a, b)); },
       async add(s) { return insert('chat_swap', { status: 'open', ...s }); },
       async get(id) { return get('chat_swap', id); },
       async update(id, p) { update('chat_swap', id, p); },
     },
     help: {
-      async list() {
-        return T.chat_help.filter(h => h.status !== 'deleted').sort(byNewest)
+      async list(p) {
+        return T.chat_help.filter(h => h.platform === p && h.status !== 'deleted').sort(byNewest)
           .map(h => ({ ...h, answers: T.chat_help_answers.filter(a => a.help_id === h.id) }));
       },
       async add(h) { return insert('chat_help', { status: 'open', ...h }); },

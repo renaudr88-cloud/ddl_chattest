@@ -15,6 +15,14 @@ export function Avatar({ user, size = 36, onPress }) {
   return onPress ? <TouchableOpacity onPress={onPress} accessibilityLabel={user?.name}>{body}</TouchableOpacity> : body;
 }
 
+// Platform logo (Dartsmind, Scolia, ...). Without an approved logo: initial on the platform colour.
+export function PlatformLogo({ platform, size = 24 }) {
+  if (platform.logo) return <Image source={platform.logo} style={{ width: size, height: size, borderRadius: size * 0.22 }} accessibilityIgnoresInvertColors />;
+  return <View style={{ width: size, height: size, borderRadius: size * 0.22, backgroundColor: platform.color, alignItems: 'center', justifyContent: 'center' }}>
+    <Text style={{ color: '#fff', fontWeight: '900', fontSize: size * 0.55 }}>{platform.name[0]}</Text>
+  </View>;
+}
+
 export function Btn({ title, onPress, kind = 'default', small, disabled, loading, style }) {
   const k = { pri: s.pri, danger: s.danger, ghost: s.ghost, default: s.def }[kind];
   return (

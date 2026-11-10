@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { View, Text, ScrollView, TextInput, Image, TouchableOpacity } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { chat, useChat, isMuted } from '../chat';
+import { chat, useChat, isMuted, listHere } from '../chat';
 import { hasBad } from '../filter';
 import { Avatar, Header, Btn, Chip, Pick, Segmented, Empty, Notice, Lightbox, ConfirmBtn, timeLabel, toast, showError, s as ui } from '../components';
 import { C } from '../theme';
@@ -34,14 +34,14 @@ export default function SwapScreen({ onUser }) {
     setBusy(true);
     try {
       const imageUrl = img ? await chat.uploadImage(img) : null;
-      await chat.request('swap.post', { kind, title, price, cond, desc, imageUrl });
+      await chat.requestHere('swap.post', { kind, title, price, cond, desc, imageUrl });
       setTitle(''); setPrice(''); setDesc(''); setImg(null); setShowForm(false); setFilter('All');
       toast('Listing posted.');
     } catch (e) { showError(e); }
     setBusy(false);
   };
 
-  const list = st.swap.filter(x => filter === 'All' || x.kind === filter);
+  const list = listHere(st, 'swap').filter(x => filter === 'All' || x.kind === filter);
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
