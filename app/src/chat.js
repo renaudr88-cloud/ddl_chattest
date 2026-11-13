@@ -87,6 +87,8 @@ class ChatClient {
     // Firebase remembers who was logged in.
     const user = await new Promise(res => { const off = onAuthStateChanged(auth, u => { off(); res(u); }); });
     if (!user) return false;
+    // After the switch to DDL accounts, old test logins (anonymous) must log in again with their DDL account.
+    if (!TEST_MODE && user.isAnonymous) { await signOut(auth).catch(() => {}); return false; }
     try {
       const snap = await getDoc(doc(db, 'users', user.uid));
       if (!snap.exists()) { await signOut(auth); return false; }

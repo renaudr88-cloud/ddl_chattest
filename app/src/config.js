@@ -3,7 +3,7 @@
 //   (set it in Firestore: collection "config", document "staff", field "code").
 // TEST_MODE = false: players log in with their ddl-online.com account (php/chat-login.php),
 //   pictures are shrunk by the app and stored in Firestore (no upload server needed).
-export const TEST_MODE = true;
+export const TEST_MODE = false;
 
 const LIVE = {
   LOGIN_URL: 'https://ddl-online.com/chat-login.php',    // php/chat-login.php
