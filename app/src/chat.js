@@ -72,6 +72,9 @@ class ChatClient {
     this.set({ status: 'connecting' });
     const ws = new WebSocket(WS_URL);
     this.ws = ws;
+    // Don't wait forever: if the server has not answered within 10 s, give up this try (it retries by itself).
+    clearTimeout(this.connectTimer);
+    this.connectTimer = setTimeout(() => { if (this.ws === ws && this.state.status !== 'online') ws.close(); }, 10000);
     ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token: this.token }));
     ws.onmessage = e => { try { this.onEvent(JSON.parse(e.data)); } catch {} };
     ws.onclose = () => {
@@ -103,7 +106,7 @@ class ChatClient {
     }
     switch (m.type) {
       case 'ready':
-        this.retry = 0;
+        this.retry = 0; clearTimeout(this.connectTimer);
         this.set(s => {
           const rooms = { ...s.rooms }, more = { ...s.more };
           for (const p of Object.keys(m.general)) { rooms['general:' + p] = m.general[p]; more['general:' + p] = m.generalMore[p]; }
