@@ -1,7 +1,7 @@
 // Main shell: bottom tabs + private chat overlay + member sheet. No navigation library needed.
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Modal, Pressable } from 'react-native';
-import { chat, useChat, listHere, RAFFLE_PLATFORM } from '../chat';
+import { chat, useChat, listHere, RAFFLE_PLATFORM, mentionCount } from '../chat';
 import { PLATFORMS, platformInfo } from '../platforms';
 import { Btn, Header, clock, showError, PlatformLogo, RoomPicker } from '../components';
 import { RaffleGate, RaffleStaffBar } from './Raffle';
@@ -76,7 +76,9 @@ export default function HomeScreen() {
     const hasRaffle = st.platform === RAFFLE_PLATFORM;
     const r = room === 'raffle' && !hasRaffle ? 'general' : room;
     const pendingRaffle = isAdmin ? (st.raffle?.requests || []).filter(x => x.status === 'pending').length : 0;
-    const rooms = [['general', 'General'], ['tournament', 'Tournament'], ...(hasRaffle ? [['raffle', '🔒 Raffles', pendingRaffle]] : [])];
+    const tags = k => mentionCount(st, `${k}:${st.platform}`);
+    const rooms = [['general', 'General', tags('general')], ['tournament', 'Tournament', tags('tournament')],
+      ...(hasRaffle ? [['raffle', '🔒 Raffles', pendingRaffle + tags('raffle')]] : [])];
     const info = {
       general: ['General chat', `${here.name} community. Keep it friendly.`],
       tournament: ['Tournament', `${here.name} tournaments: draws, results, who plays next.`],
@@ -117,7 +119,8 @@ export default function HomeScreen() {
         <View style={styles.tabs}>
           {TABS.map(([k, ic, label]) => {
             const badge = k === 'messages' ? unreadDMs : k === 'help' && isAdmin ? openHelp
-              : k === 'chat' && isAdmin ? (st.raffle?.requests || []).filter(x => x.status === 'pending').length : 0;
+              : k === 'chat' ? (isAdmin ? (st.raffle?.requests || []).filter(x => x.status === 'pending').length : 0)
+                + ['general', 'tournament', 'raffle'].reduce((n, r) => n + mentionCount(st, `${r}:${st.platform}`), 0) : 0;
             const on = tab === k;
             return (
               <TouchableOpacity key={k} style={styles.tab} onPress={() => setTab(k)} accessibilityLabel={label}>

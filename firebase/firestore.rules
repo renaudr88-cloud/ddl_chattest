@@ -90,7 +90,8 @@ service cloud.firestore {
     match /rooms/{room}/messages/{id} {
       allow read: if canRead() && roomOk(room) && roomAccess(room);
       allow create: if canPost() && roomOk(room) && roomAccess(room)
-        && request.resource.data.keys().hasOnly(['uid', 'name', 'role', 'text', 'imageUrl', 'ts'])
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'role', 'text', 'imageUrl', 'mentions', 'ts'])
+        && (!('mentions' in request.resource.data) || (request.resource.data.mentions is list && request.resource.data.mentions.size() <= 10))
         && request.resource.data.uid == me()
         && request.resource.data.name == myName()
         && request.resource.data.role == myRole()

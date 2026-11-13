@@ -305,7 +305,7 @@ class ChatClient {
   outMsg(d, room) {
     const x = d.data({ serverTimestamps: 'estimate' });
     this.roomOf.set(d.id, room);
-    return { id: d.id, room, user: userOf(x), text: x.text || '', imageUrl: x.imageUrl || null, ts: ms(x.ts) };
+    return { id: d.id, room, user: userOf(x), text: x.text || '', imageUrl: x.imageUrl || null, mentions: x.mentions || [], ts: ms(x.ts) };
   }
   outFriendly(d, p) {
     const x = d.data({ serverTimestamps: 'estimate' });
@@ -346,9 +346,11 @@ class ChatClient {
     await this.watchRoom(room);
     return { room, other };
   }
-  async postMessage(room, text, imageUrl, otherHint) {
+  async postMessage(room, text, imageUrl, otherHint, mentions) {
     const batch = writeBatch(db);
-    batch.set(doc(collection(db, 'rooms', room, 'messages')), { ...this.mine(), text: text || '', imageUrl: imageUrl || null, ts: serverTimestamp() });
+    const msg = { ...this.mine(), text: text || '', imageUrl: imageUrl || null, ts: serverTimestamp() };
+    if (mentions?.length) msg.mentions = mentions;
+    batch.set(doc(collection(db, 'rooms', room, 'messages')), msg);
     if (room.startsWith('dm:')) {
       const [, p, a, b] = room.split(':');
       const otherId = a === this.uid ? b : a;
@@ -379,11 +381,16 @@ class ChatClient {
     },
     async history({ room }) { await this.watchRoom(room); return { room, messages: this.state.rooms[room] || [] }; },
 
-    async send({ room, text, imageUrl }) {
+    async send({ room, text, imageUrl, mentions }) {
       text = String(text || '').trim().slice(0, 1000);
       if (!text && !imageUrl) fail('empty', 'Write a message or add a picture.');
       this.canPost(text);
-      await this.postMessage(room, text, imageUrl);
+      // @tags: only people whose @name is still in the text, max 10.
+      const tags = [];
+      for (const m of mentions || []) {
+        if (m?.id && m.id !== this.uid && text.includes('@' + m.name) && !tags.some(t => t.id === m.id)) tags.push({ id: String(m.id), name: String(m.name).slice(0, 30) });
+      }
+      await this.postMessage(room, text, imageUrl, null, tags.slice(0, 10));
     },
     async delete({ id }) {
       const room = this.roomOf.get(id); if (!room) return;
@@ -560,6 +567,10 @@ export function useChat() {
 
 export const isMuted = me => !!me?.sanction?.muted_until && me.sanction.muted_until > Date.now();
 export const CAN_UPLOAD = true;
+
+// Messages in a room that tag me and that I have not seen yet.
+export const mentionCount = (st, room) => (st.rooms[room] || []).filter(m =>
+  m.user.id !== st.me?.id && m.ts > (st.read[room] || 0) && (m.mentions || []).some(x => x.id === st.me?.id)).length;
 
 // The list of friendlies / swap / help for the platform the player is looking at.
 export const listHere = (st, key) => st[key]?.[st.platform] || [];
