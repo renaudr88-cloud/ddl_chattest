@@ -11,6 +11,9 @@ const CHAT_TOKEN_TTL = 60 * 60 * 24 * 30; // app stays logged in for 30 days
 // admins have players.is_admin = 1, and these membership statuses may not log in:
 const BLOCKED_STATUSES = ['removed', 'banned', 'blocked', 'deleted'];
 
+// Web address of the DDL site: profile photos (players.photo) are shown in the chat from here.
+const CHAT_SITE_URL = 'https://ddl-online.com';
+
 // Firebase: the service account key file of your Firebase project.
 // Firebase console > Project settings > Service accounts > Generate new private key.
 // Keep this file OUTSIDE the public web root and never upload it to GitHub: it is the master key of the project.

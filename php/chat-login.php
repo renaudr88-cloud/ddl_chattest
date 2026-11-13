@@ -19,7 +19,7 @@ if ($login === '' || $password === '') chat_json(400, ['error' => 'Enter your em
 $ipKey = 'chatlogin_' . ($_SERVER['REMOTE_ADDR'] ?? 'x');
 if (function_exists('apcu_fetch') && (int)apcu_fetch($ipKey) >= 10) chat_json(429, ['error' => 'Too many attempts. Try again in 15 minutes.']);
 
-$st = chat_db()->prepare('SELECT id, name, password_hash, is_admin, membership_status FROM players WHERE email = ? LIMIT 1');
+$st = chat_db()->prepare('SELECT id, name, password_hash, is_admin, membership_status, photo FROM players WHERE email = ? LIMIT 1');
 $st->execute([$login]);
 $u = $st->fetch(PDO::FETCH_ASSOC);
 
@@ -37,16 +37,27 @@ $user = [
     'uid'    => (string)$u['id'],
     'name'   => trim((string)$u['name']) !== '' ? mb_substr(trim((string)$u['name']), 0, 30) : 'Player ' . $u['id'],
     'role'   => (int)$u['is_admin'] === 1 ? 'admin' : 'player',
-    'avatar' => null,
+    'avatar' => chat_photo_url((string)($u['photo'] ?? '')),
 ];
 $token = chat_make_token($user + ['exp' => time() + CHAT_TOKEN_TTL]);   // for picture uploads (chat-upload.php)
 
 // Firebase sign-in for the chat itself. uid "ddl-<id>" is this player's id in Firebase.
 try {
-    $firebaseToken = firebase_custom_token('ddl-' . $user['uid'], ['ddlName' => $user['name'], 'ddlRole' => $user['role']]);
+    $firebaseToken = firebase_custom_token('ddl-' . $user['uid'], array_filter(
+        ['ddlName' => $user['name'], 'ddlRole' => $user['role'], 'ddlPhoto' => $user['avatar']],
+        fn($v) => $v !== null));
 } catch (Throwable $e) {
     error_log('chat-login: ' . $e->getMessage());
     chat_json(500, ['error' => 'The chat is not set up correctly yet. Try again later.']);
+}
+
+// Profile photo from the website (players.photo, e.g. "images/player-photos/player_12_ab12.jpg",
+// set by upload-player-photo.php) as a full web address, or null when the player has none.
+function chat_photo_url(string $path): ?string {
+    $path = trim($path);
+    if ($path === '' || !preg_match('~^[A-Za-z0-9_./-]+\.(jpe?g|png|gif|webp)$~i', $path) || str_contains($path, '..')) return null;
+    $site = defined('CHAT_SITE_URL') ? CHAT_SITE_URL : 'https://ddl-online.com';
+    return rtrim($site, '/') . '/' . ltrim($path, '/');
 }
 
 chat_json(200, [

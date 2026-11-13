@@ -14,7 +14,7 @@ firebase.json   rules + web hosting for `firebase deploy`
 
 ```
  App ──name + password──▶ php/chat-login.php ──▶ DDL users table (password_verify)
-  │◀── Firebase custom token (uid "ddl-<id>", claims ddlName, ddlRole) + upload token
+  │◀── Firebase custom token (uid "ddl-<id>", claims ddlName, ddlRole, ddlPhoto) + upload token
   │
   ├── signInWithCustomToken ──▶ Firebase Auth
   ├── live reads/writes ──────▶ Firestore  (checked by firebase/firestore.rules)
@@ -80,7 +80,7 @@ It uses the site's own `db.php`, so no database password goes into the chat file
 
 | Path | What |
 |---|---|
-| `users/{uid}` | name, nameLower, role, avatar, lastSeen |
+| `users/{uid}` | name, nameLower, role, avatar (website profile photo), lastSeen |
 | `rooms/{room}/messages/{id}` | room = `general:<platform>`, `tournament:<platform>` or `dm:<platform>:<uidA>:<uidB>` |
 | `dms/{room}` | private chat list: members, users, lastAt, lastBy |
 | `platforms/{p}/friendlies/{id}` | FT3 / FT5 / Other cards, status open / matched / cancelled |
@@ -105,6 +105,8 @@ Platforms: `app/src/platforms.js` and `platforms()` in `firebase/firestore.rules
 - Bad words: blocked in the rules (plain words) and in the app (also "f.u.c.k", "k4nker").
   Lists: `app/src/filter.js` and `clean()` in `firebase/firestore.rules`.
 - Pictures: only JPEG pictures made by the app, under 400 KB.
+- Profile photos: a DDL login shows the photo from the website (`players.photo`, sent as claim `ddlPhoto`);
+  nobody can set someone else's photo. Test logins show initials.
 
 The spam brake (6 posts per 6 seconds) is in the app only; Firestore rules cannot count posts.
 

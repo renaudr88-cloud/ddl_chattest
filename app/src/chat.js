@@ -146,8 +146,9 @@ class ChatClient {
       let admin = claims.ddlRole === 'admin';
       if (!admin) { try { admin = (await getDoc(doc(db, 'staff', this.uid))).exists(); } catch {} }
       this.role = admin ? 'admin' : 'player';
+      this.avatar = claims.ddlPhoto || null;   // profile photo from the DDL website (DDL login only)
       await this.saveProfile();
-      this.set({ me: { id: this.uid, name: this.name, role: this.role, avatar: null, sanction: sanctionFrom(null) } });
+      this.set({ me: { id: this.uid, name: this.name, role: this.role, avatar: this.avatar, sanction: sanctionFrom(null) } });
       this.connect();
     } catch (e) {
       this.set({ status: 'offline' });
@@ -156,7 +157,7 @@ class ChatClient {
   }
   saveProfile() {
     return setDoc(doc(db, 'users', this.uid), {
-      name: this.name, nameLower: this.name.toLowerCase(), role: this.role, avatar: null, lastSeen: serverTimestamp(),
+      name: this.name, nameLower: this.name.toLowerCase(), role: this.role, avatar: this.avatar || null, lastSeen: serverTimestamp(),
     });
   }
   heartbeat() {
@@ -346,7 +347,7 @@ class ChatClient {
     if (this.posts.length >= 6) fail('slow_down', 'You are sending too fast. Wait a few seconds.');
     this.posts.push(now);
   }
-  mine() { return { uid: this.uid, name: this.name, role: this.role }; }
+  mine() { return { uid: this.uid, name: this.name, role: this.role, ...(this.avatar ? { avatar: this.avatar } : {}) }; }
   platformOf(kind, id) { return P_KEYS.find(p => (this.state[kind][p] || []).some(x => x.id === id)) || this.state.platform; }
   async openDM(platform, other) {
     const room = dmRoom(platform, this.uid, other.id);
@@ -365,7 +366,7 @@ class ChatClient {
       const other = known || userOf({ uid: otherId, ...(await getDoc(doc(db, 'users', otherId))).data() });
       batch.set(doc(db, 'dms', room), {
         room, platform: p, members: [a, b], lastBy: this.uid, lastAt: serverTimestamp(),
-        users: { [this.uid]: { name: this.name, role: this.role }, [otherId]: { name: other.name, role: other.role || 'player' } },
+        users: { [this.uid]: { name: this.name, role: this.role, avatar: this.avatar || null }, [otherId]: { name: other.name, role: other.role || 'player', avatar: other.avatar || null } },
       });
     }
     await batch.commit();
