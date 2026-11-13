@@ -1,6 +1,6 @@
 // Connection + shared state for the whole app. Screens read it with useChat() and call chat.request(...).
 import { useEffect, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WS_URL, LOGIN_URL, UPLOAD_URL } from './config';
 import { PLATFORMS } from './platforms';
@@ -173,7 +173,8 @@ class ChatClient {
 
   async uploadImage(uri) {
     const form = new FormData();
-    form.append('image', { uri, name: 'photo.jpg', type: 'image/jpeg' });
+    if (Platform.OS === 'web') form.append('image', await (await fetch(uri)).blob(), 'photo.jpg'); // browser: real file
+    else form.append('image', { uri, name: 'photo.jpg', type: 'image/jpeg' });                      // phone
     let res, data;
     try {
       res = await fetch(UPLOAD_URL, { method: 'POST', headers: { Authorization: 'Bearer ' + this.token }, body: form });

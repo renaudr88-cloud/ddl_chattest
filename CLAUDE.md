@@ -4,11 +4,12 @@ Community chat app for the Digital Darts League (ddl-online.com), replacing the 
 Must handle ~1000 concurrent players and be very easy to use for all ages.
 
 - `server/` Node.js WebSocket server (`ws`, `mysql2`), entry `server.js`, storage in `db.js`
-  (`DB_DRIVER=mysql` or `memory`). Tests: `npm test` (in-memory, must stay green). Local run: `npm run dev`.
+  (`DB_DRIVER=mysql` or `memory`). Tests: `npm test` (in-memory, must stay green).
+  Test mode: `npm run dev` (`dev.js`: memory + DEV_MODE, own login `/dev-login` and upload `/dev-upload`, example data).
 - `php/` login + picture upload endpoints that run on the existing DDL PHP/MySQL site.
   PHP signs an HMAC token with `CHAT_SECRET`; the Node server verifies it. PHP and Node never call each other.
 - `sql/schema.sql` new `chat_*` tables only; never alter existing DDL tables.
-- `app/` Expo (React Native) screens; URLs in `app/src/config.js`, colours in `app/src/theme.js`,
+- `app/` complete Expo project (SDK 58); `TEST_MODE` in `app/src/config.js` picks the test server or the live one; URLs in `app/src/config.js`, colours in `app/src/theme.js`,
   platforms in `app/src/platforms.js`, login background in `app/assets/login-bg.jpg`.
 - Platforms (Dartsmind, Scolia): each has its own General chat, Friendlies, Dartswap, Help and private chats.
   Only the account and mute/kick/ban are shared. Server list: `PLATFORMS` in `server/.env`; must match the app.

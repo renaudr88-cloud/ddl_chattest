@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, Image, ActivityIndicator, KeyboardAvoidingView, Platform, useWindowDimensions } from 'react-native';
 import { chat, useChat } from '../chat';
 import { PLATFORMS } from '../platforms';
+import { TEST_MODE } from '../config';
 import { PlatformLogo } from '../components';
 import { C, themed } from '../theme';
 
@@ -70,7 +71,7 @@ export default function LoginScreen() {
       <TouchableOpacity style={[styles.button, busy && { opacity: 0.6 }]} onPress={handleLogin} disabled={busy}>
         {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Log In</Text>}
       </TouchableOpacity>
-      <Text style={styles.hint}>Use your ddl-online.com account. You can switch platform in the app.</Text>
+      <Text style={styles.hint}>{TEST_MODE ? 'Test mode: log in with any name and any password.' : 'Use your ddl-online.com account. You can switch platform in the app.'}</Text>
     </KeyboardAvoidingView>
     </View>
   );

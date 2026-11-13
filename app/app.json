@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "DDL Chat",
+    "slug": "ddl-chat",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/ddl-logo.png",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#011E51",
+    "splash": { "image": "./assets/ddl-logo.png", "resizeMode": "contain", "backgroundColor": "#011E51" },
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": { "NSPhotoLibraryUsageDescription": "Choose pictures to share in the DDL chat." }
+    },
+    "android": {
+      "adaptiveIcon": { "foregroundImage": "./assets/ddl-logo.png", "backgroundColor": "#011E51" }
+    },
+    "web": { "favicon": "./assets/ddl-logo.png" }
+  }
+}

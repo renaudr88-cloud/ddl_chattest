@@ -25,6 +25,31 @@ ddl-chat/
 PHP and Node never talk to each other. They share one secret (`CHAT_SECRET`), so a token signed
 by PHP is trusted by the socket server. Roles (player/admin) come from the DDL users table at login.
 
+## Test on your own computer (no database, no PHP)
+
+The server has a test mode that keeps everything in memory and has its own login and picture upload.
+The app starts in test mode (`TEST_MODE = true` in `app/src/config.js`).
+
+```
+cd server
+npm install
+npm run dev        # test server on port 8080, with a few example messages
+```
+
+In a second terminal:
+
+```
+cd app
+npm install
+npx expo start     # scan the QR code with Expo Go, or press w for the browser
+```
+
+Log in with any name and any password. "Renaud" is an admin (change with `DEV_ADMINS=renaud,ash`).
+Log in on a second phone or browser tab with another name to chat with yourself.
+The app finds the computer's address by itself; the phone only needs to be on the same Wi-Fi.
+Test mode only switches on with `DB_DRIVER=memory`, so it can never run against the real database.
+For the real servers set `TEST_MODE = false`.
+
 ## 1. Database
 
 ```
@@ -78,13 +103,8 @@ process, the in-memory socket map in `server.js` would have to move to Redis pub
 
 ## 4. Expo app
 
-Copy `app/App.js`, `app/src/` and `app/assets/ddl-logo.png` into the Expo project, then:
-
-```
-npx expo install expo-image-picker @react-native-async-storage/async-storage react-native-safe-area-context
-```
-
-Set the three URLs in `src/config.js`. Your `LoginScreen` is kept and wired to `chat-login.php`.
+`app/` is a complete Expo project (SDK 58): `cd app`, `npm install`, `npx expo start`.
+For the live servers set `TEST_MODE = false` in `src/config.js` and check the three URLs there. Your `LoginScreen` is kept and wired to `chat-login.php`.
 Colours live in `src/theme.js` (two palettes; styles are built with `themed(C => ({…}))` so they follow the chosen background). No navigation library is needed; tabs live in `src/screens/HomeScreen.js`.
 Image picking uses `mediaTypes: ['images']` (Expo SDK 52+).
 

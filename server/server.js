@@ -32,6 +32,8 @@ const CFG = {
   // Each platform gets its own General chat, Friendlies, Dartswap, Help desk and private chats.
   // Add one later (e.g. dartcounter) by adding it here and in app/src/config.js.
   platforms: (process.env.PLATFORMS || 'dartsmind,scolia').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
+  // Test mode (no database, no PHP): only allowed together with DB_DRIVER=memory. Start with `npm run dev`.
+  dev: process.env.DEV_MODE === '1' && process.env.DB_DRIVER === 'memory',
   origins: (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean),
 };
 if (CFG.secret.length < 32) { console.error('CHAT_SECRET must be set (32+ characters, same value as in php/chat-config.php)'); process.exit(1); }
@@ -116,6 +118,8 @@ function canPost(uid) {
 }
 function checkImage(url) {
   if (!url) return null;
+  if (CFG.dev && typeof url === 'string' && /^https?:\/\/[^/]+\/uploads\/dev-[a-f0-9]{24}\.(jpg|png|gif|webp)$/.test(url)
+      && fs.existsSync(path.join(DEV_UPLOADS, url.split('/').pop()))) return url;
   if (!CFG.uploadBase || typeof url !== 'string' || !url.startsWith(CFG.uploadBase) || url.length > 255) fail('bad_image', 'Pictures must be uploaded through the DDL app.');
   return url;
 }
@@ -384,7 +388,72 @@ async function onAuth(ws, token) {
   if (first) broadcast({ type: 'presence', online: sockets.size, userId: u.id, status: 'online' });
 }
 
-const server = http.createServer((req, res) => {
+/* ---------------- test mode: login + picture upload without PHP ---------------- */
+const DEV_UPLOADS = path.join(__dirname, 'dev-uploads');
+const DEV_ADMINS = (process.env.DEV_ADMINS || 'renaud').split(',').map(s => s.trim().toLowerCase());
+const IMG_TYPES = { jpg: [0xff, 0xd8], png: [0x89, 0x50], gif: [0x47, 0x49], webp: [0x52, 0x49] };
+function devToken(name) {
+  const clean = String(name || '').trim().slice(0, 30);
+  const uid = 'dev-' + clean.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const role = DEV_ADMINS.includes(clean.toLowerCase()) ? 'admin' : 'player';
+  const body = Buffer.from(JSON.stringify({ uid, name: clean, role, exp: Math.floor(now() / 1000) + 30 * 86400 })).toString('base64url');
+  return { token: body + '.' + crypto.createHmac('sha256', CFG.secret).update(body).digest('base64url'), user: { id: uid, name: clean, role, avatar: null } };
+}
+function readBody(req, max) {
+  return new Promise((resolve, reject) => {
+    const parts = []; let size = 0;
+    req.on('data', c => { size += c.length; if (size > max) { reject(new Error('too_large')); req.destroy(); } else parts.push(c); });
+    req.on('end', () => resolve(Buffer.concat(parts))); req.on('error', reject);
+  });
+}
+// Minimal multipart/form-data reader: returns the bytes of the field called "image".
+function multipartImage(buf, contentType) {
+  const m = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType || ''); if (!m) return null;
+  const boundary = Buffer.from('--' + (m[1] || m[2]));
+  let pos = buf.indexOf(boundary);
+  while (pos !== -1) {
+    const headEnd = buf.indexOf('\r\n\r\n', pos); if (headEnd === -1) return null;
+    const head = buf.slice(pos, headEnd).toString('utf8');
+    const next = buf.indexOf(boundary, headEnd);
+    if (/name="image"/i.test(head) && next !== -1) return buf.slice(headEnd + 4, next - 2);
+    pos = next;
+  }
+  return null;
+}
+async function devHttp(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)); };
+  try {
+    if (req.method === 'POST' && req.url === '/dev-login') {
+      let data = {}; try { data = JSON.parse((await readBody(req, 10_000)).toString('utf8') || '{}'); } catch {}
+      if (!String(data.login || '').trim()) return json(400, { error: 'Enter a name to test with.' });
+      return json(200, devToken(data.login));
+    }
+    if (req.method === 'POST' && req.url === '/dev-upload') {
+      if (!verifyToken(String(req.headers.authorization || '').replace(/^Bearer\s+/i, ''))) return json(401, { error: 'Log in again.' });
+      const img = multipartImage(await readBody(req, 10 * 1024 * 1024), req.headers['content-type']);
+      const ext = img && Object.keys(IMG_TYPES).find(k => img[0] === IMG_TYPES[k][0] && img[1] === IMG_TYPES[k][1]);
+      if (!ext) return json(415, { error: 'Use a JPG, PNG, WebP or GIF picture.' });
+      fs.mkdirSync(DEV_UPLOADS, { recursive: true });
+      const name = 'dev-' + crypto.randomBytes(12).toString('hex') + '.' + ext;
+      fs.writeFileSync(path.join(DEV_UPLOADS, name), img);
+      return json(200, { url: `http://${req.headers.host}/uploads/${name}` });
+    }
+    const up = /^\/uploads\/(dev-[a-f0-9]{24}\.(jpg|png|gif|webp))$/.exec(req.url);
+    if (req.method === 'GET' && up && fs.existsSync(path.join(DEV_UPLOADS, up[1]))) {
+      res.writeHead(200, { 'content-type': up[2] === 'jpg' ? 'image/jpeg' : 'image/' + up[2], 'cache-control': 'max-age=86400' });
+      return fs.createReadStream(path.join(DEV_UPLOADS, up[1])).pipe(res);
+    }
+  } catch (e) { return json(e.message === 'too_large' ? 413 : 500, { error: e.message === 'too_large' ? 'That picture is too big (max 10 MB).' : 'Something went wrong.' }); }
+  return false;
+}
+
+const server = http.createServer(async (req, res) => {
+  if (CFG.dev) {
+    res.setHeader('access-control-allow-origin', '*');
+    res.setHeader('access-control-allow-headers', 'content-type, authorization');
+    if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+    if ((await devHttp(req, res)) !== false) return;
+  }
   if (req.url === '/health') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ ok: true, online: sockets.size })); }
   res.writeHead(404); res.end();
 });
@@ -449,5 +518,8 @@ setInterval(() => {
   await db.init();
   for (const u of await db.allUsers()) users.set(String(u.id), { ...u, id: String(u.id) });
   for (const s of await db.sanctions.all()) sanctions.set(String(s.user_id), { ...s, user_id: String(s.user_id) });
-  server.listen(CFG.port, () => console.log(`DDL Chat listening on :${CFG.port}${CFG.path} (${process.env.DB_DRIVER || 'mysql'})`));
+  server.listen(CFG.port, () => {
+    console.log(`DDL Chat listening on :${CFG.port}${CFG.path} (${process.env.DB_DRIVER || 'mysql'})`);
+    if (CFG.dev) console.log('TEST MODE: no database, log in with any name (admins: ' + DEV_ADMINS.join(', ') + '). Messages are lost when you stop the server.');
+  });
 })().catch(e => { console.error('Startup failed:', e); process.exit(1); });
