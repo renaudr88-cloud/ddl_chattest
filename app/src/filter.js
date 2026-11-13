@@ -2,7 +2,7 @@
 // Bad-word filter (English + Dutch). Same logic runs in the app (app/src/filter.js) for instant feedback,
 // but the server is the one that decides.
 
-const BAD = ['fuck','fck','fuk','shit','cunt','bitch','asshole','arsehole','bastard','dick','dickhead','wanker','twat',
+const BAD = ['fuck','fck','fuk','shit','cunt','bitch','asshole','arsehole','bastard','dickhead','wanker','twat',
   'prick','slut','whore','motherfucker','retard','nigger','nigga','faggot','fag',
   'kut','klootzak','hoer','lul','godverdomme','gvd','tering','kanker','kankerlijer','mongool','teringlijer','eikel',
   'sukkel','flikker','tyfus','pleuris','debiel','kech'];

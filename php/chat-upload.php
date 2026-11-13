@@ -3,6 +3,9 @@
 // -> 200 {"url": "https://ddl-online.com/uploads/chat/<random>.jpg"}
 // Re-encodes every picture with GD (strips EXIF/GPS and anything hidden in the file) and shrinks it.
 require __DIR__ . '/chat-config.php';
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') chat_json(405, ['error' => 'Use POST.']);
 $me = chat_read_token(chat_bearer());

@@ -1,43 +1,43 @@
 <?php
-// POST /chat-login.php   JSON {"login": "username or email", "password": "..."}
-// -> 200 {"token": "...", "user": {...}}  |  401 {"error": "..."}
-// The app keeps the token and sends it to the WebSocket server and to chat-upload.php.
+// POST /chat-login.php   JSON {"login": "email address", "password": "..."}
+// -> 200 {"token": "...", "firebaseToken": "...", "user": {...}}  |  401/403 {"error": "..."}
+// Same check as the website's login.php: players.email + password_verify, blocked statuses refused.
+// The app signs in to Firebase with firebaseToken and keeps token for picture uploads (chat-upload.php).
 require __DIR__ . '/chat-config.php';
+header('Access-Control-Allow-Origin: *');            // the app's web version runs on Firebase Hosting
+header('Access-Control-Allow-Headers: Content-Type, Authorization');
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') chat_json(405, ['error' => 'Use POST.']);
 
 $in = json_decode(file_get_contents('php://input'), true) ?: $_POST;
 $login = trim((string)($in['login'] ?? ''));
 $password = (string)($in['password'] ?? '');
-if ($login === '' || $password === '') chat_json(400, ['error' => 'Enter your username or email and your password.']);
+if ($login === '' || $password === '') chat_json(400, ['error' => 'Enter your email address and your password.']);
 
 // Basic brute-force brake: max 10 failed attempts per IP per 15 minutes (uses APCu when available).
 $ipKey = 'chatlogin_' . ($_SERVER['REMOTE_ADDR'] ?? 'x');
 if (function_exists('apcu_fetch') && (int)apcu_fetch($ipKey) >= 10) chat_json(429, ['error' => 'Too many attempts. Try again in 15 minutes.']);
 
-$cols = [COL_ID . ' AS id', COL_USERNAME . ' AS username', COL_PASSWORD . ' AS hash'];
-if (COL_AVATAR) $cols[] = COL_AVATAR . ' AS avatar';
-if (COL_ROLE)   $cols[] = COL_ROLE . ' AS role';
-$sql = 'SELECT ' . implode(',', $cols) . ' FROM ' . USERS_TABLE .
-       ' WHERE ' . COL_USERNAME . ' = ? OR ' . COL_EMAIL . ' = ? LIMIT 1';
-$st = chat_db()->prepare($sql);
-$st->execute([$login, $login]);
-$u = $st->fetch();
+$st = chat_db()->prepare('SELECT id, name, password_hash, is_admin, membership_status FROM players WHERE email = ? LIMIT 1');
+$st->execute([$login]);
+$u = $st->fetch(PDO::FETCH_ASSOC);
 
-if (!$u || !password_verify($password, $u['hash'])) {
+if (!$u || !password_verify($password, (string)$u['password_hash'])) {
     if (function_exists('apcu_fetch')) { apcu_add($ipKey, 0, 900); apcu_inc($ipKey); }
     usleep(400000);
-    chat_json(401, ['error' => 'Username or password is wrong.']);
+    chat_json(401, ['error' => 'Incorrect email or password.']);
 }
+if (in_array(strtolower((string)($u['membership_status'] ?? '')), BLOCKED_STATUSES, true)) {
+    chat_json(403, ['error' => 'This account has been removed. If you believe this is a mistake, please contact an admin.']);
+}
+// Chat bans and mutes are kept in Firebase (sanctions/{uid}); the rules there block those players.
 
-// Bans are kept in Firebase (sanctions/{uid}); the rules there block banned players.
-
-$isAdmin = in_array((int)$u['id'], ADMIN_IDS, true) || (COL_ROLE && in_array(strtolower((string)$u['role']), ADMIN_ROLES, true));
 $user = [
     'uid'    => (string)$u['id'],
-    'name'   => $u['username'],
-    'role'   => $isAdmin ? 'admin' : 'player',
-    'avatar' => $u['avatar'] ?? null,
+    'name'   => trim((string)$u['name']) !== '' ? mb_substr(trim((string)$u['name']), 0, 30) : 'Player ' . $u['id'],
+    'role'   => (int)$u['is_admin'] === 1 ? 'admin' : 'player',
+    'avatar' => null,
 ];
 $token = chat_make_token($user + ['exp' => time() + CHAT_TOKEN_TTL]);   // for picture uploads (chat-upload.php)
 

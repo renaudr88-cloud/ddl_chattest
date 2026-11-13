@@ -61,15 +61,21 @@ firebase deploy                   # publishes the rules and the web app
 Run `npm run build:web` and `firebase deploy` again after each update. `firebase deploy` also publishes
 `firebase/firestore.rules`, so step 5 above is then done for you.
 
-## Go live with DDL accounts (Stevey)
+## Go live with DDL accounts
 
-1. Firebase console → **Project settings → Service accounts → Generate new private key**.
-   Put the JSON file on the DDL server **outside the web root**; never in git. Path in `php/chat-config.php`.
-2. Upload `php/chat-login.php`, `php/chat-upload.php`, `php/chat-config.php`; fill in `chat-config.php`
-   (database, users table columns, admin roles, upload folder, `CHAT_SECRET`). PHP needs `openssl`, PDO MySQL and GD.
-3. Set `TEST_MODE = false` in `app/src/config.js`. If the upload folder is not `https://ddl-online.com/uploads/chat/`,
-   change the address in `picture()` in `firebase/firestore.rules`.
-4. Test the PHP login: a POST with `{"login":"...","password":"..."}` must return `token`, `firebaseToken` and `user`.
+The chat login works exactly like the website's `login.php`: `players.email` + `password_verify` on
+`players.password_hash`; `is_admin = 1` is staff; membership status removed / banned / blocked / deleted is refused.
+It uses the site's own `db.php`, so no database password goes into the chat files.
+
+1. Firebase console → **Project settings → Service accounts → Generate new private key** (a JSON file).
+   This is the master key of the Firebase project: never put it in git or in a public folder.
+2. On the server, make a folder `private` **next to** the website folder (not inside it) and put the key there as
+   `firebase-service-account.json`. (Path is `FIREBASE_SERVICE_ACCOUNT` in `php/chat-config.php`.)
+3. In `php/chat-config.php` set `CHAT_SECRET` to a long random string. Upload `chat-config.php`, `chat-login.php`
+   and `chat-upload.php` to the website folder, next to `index.php` and `db.php`.
+4. Check: `https://ddl-online.com/chat-login.php` in a browser must say `{"error":"Use POST."}`.
+5. Set `TEST_MODE = false` in `app/src/config.js`, build and deploy (`npm run build:web`, `firebase deploy`).
+   Pictures go to `uploads/chat/` in the website folder; if that address changes, also change `picture()` in the rules.
 
 ## Data (Firestore)
 

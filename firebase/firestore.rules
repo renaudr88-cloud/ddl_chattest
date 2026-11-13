@@ -47,7 +47,7 @@ service cloud.firestore {
     function clean(t) {
       let s = t.lower();
       return !s.matches('(?s).*(fuck|cunt|motherfucker|nigger|faggot|klootzak|kanker|tering|godverdomme).*')
-        && !s.matches('(?s)(.*[^a-z])?(fck|fuk|shit|bitch|asshole|arsehole|bastard|dick|dickhead|wanker|twat|prick|slut|whore|retard|nigga|fag|kut|hoer|lul|gvd|mongool|eikel|sukkel|flikker|tyfus|pleuris|debiel|kech)(s|en|ing|ed|er|ers)?([^a-z].*)?');
+        && !s.matches('(?s)(.*[^a-z])?(fck|fuk|shit|bitch|asshole|arsehole|bastard|dickhead|wanker|twat|prick|slut|whore|retard|nigga|fag|kut|hoer|lul|gvd|mongool|eikel|sukkel|flikker|tyfus|pleuris|debiel|kech)(s|en|ing|ed|er|ers)?([^a-z].*)?');
     }
     function text(t, max) { return t is string && t.size() <= max && clean(t); }
     function picture(u) {
@@ -73,7 +73,7 @@ service cloud.firestore {
         && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 30
         && request.resource.data.name == request.auth.token.get('ddlName', request.resource.data.name)
         && request.resource.data.nameLower == request.resource.data.name.lower()
-        && clean(request.resource.data.name)
+        && (request.auth.token.get('ddlName', null) != null || clean(request.resource.data.name))   // DDL names come from the DDL database
         && request.resource.data.role == myRole();
     }
 

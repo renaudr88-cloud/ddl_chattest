@@ -1,26 +1,15 @@
 <?php
 // DDL Chat — shared settings for chat-login.php and chat-upload.php.
-// Keep this file OUTSIDE the public web root if possible, or block direct access to it.
+// Put the three chat-*.php files in the same folder as the site's index.php and db.php.
 
-// Same value as CHAT_SECRET in server/.env (32+ random characters).
+// A long random string (32+ characters) that signs the picture-upload token. Make one with:  openssl rand -base64 48
 const CHAT_SECRET = 'CHANGE_ME_to_a_long_random_string';
 const CHAT_TOKEN_TTL = 60 * 60 * 24 * 30; // app stays logged in for 30 days
 
-// Database (the existing DDL database)
-const CHAT_DB_DSN  = 'mysql:host=localhost;dbname=ddl;charset=utf8mb4';
-const CHAT_DB_USER = 'ddl';
-const CHAT_DB_PASS = '';
-
-// Map these to the existing DDL users table.
-const USERS_TABLE   = 'users';
-const COL_ID        = 'id';
-const COL_USERNAME  = 'username';
-const COL_EMAIL     = 'email';
-const COL_PASSWORD  = 'password';  // must hold password_hash() output
-const COL_AVATAR    = null;        // e.g. 'avatar_url', or null
-const COL_ROLE      = 'role';      // set to null to use ADMIN_IDS only
-const ADMIN_ROLES   = ['admin', 'staff', 'moderator'];
-const ADMIN_IDS     = [];          // extra admins by user id, e.g. [1, 2]
+// Database: the site's own db.php (same folder) gives $pdo, so no database password is needed here.
+// Players log in like on the website: players.email + players.password_hash (password_hash / password_verify),
+// admins have players.is_admin = 1, and these membership statuses may not log in:
+const BLOCKED_STATUSES = ['removed', 'banned', 'blocked', 'deleted'];
 
 // Firebase: the service account key file of your Firebase project.
 // Firebase console > Project settings > Service accounts > Generate new private key.
@@ -28,19 +17,14 @@ const ADMIN_IDS     = [];          // extra admins by user id, e.g. [1, 2]
 const FIREBASE_SERVICE_ACCOUNT = __DIR__ . '/../private/firebase-service-account.json';
 
 // Pictures
-const UPLOAD_DIR      = __DIR__ . '/../uploads/chat/';            // folder on disk, writable by PHP
-const UPLOAD_BASE_URL = 'https://ddl-online.com/uploads/chat/';   // public URL of that folder (same as server/.env)
+const UPLOAD_DIR      = __DIR__ . '/uploads/chat/';               // folder on disk, writable by PHP (made automatically)
+const UPLOAD_BASE_URL = 'https://ddl-online.com/uploads/chat/';   // public URL of that folder (also in firebase/firestore.rules)
 const UPLOAD_MAX_BYTES = 10 * 1024 * 1024;
 const UPLOAD_MAX_SIDE  = 1280;
 
 function chat_db(): PDO {
-    static $pdo = null;
-    if (!$pdo) {
-        $pdo = new PDO(CHAT_DB_DSN, CHAT_DB_USER, CHAT_DB_PASS, [
-            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-        ]);
-    }
+    global $pdo;
+    if (!isset($pdo) || !($pdo instanceof PDO)) require_once __DIR__ . '/db.php';
     return $pdo;
 }
 

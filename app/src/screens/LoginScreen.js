@@ -30,7 +30,7 @@ export default function LoginScreen() {
   const formTop = BACKGROUND ? imgTop + imgH * SLOGAN_BOTTOM + 20 : 0;
 
   const handleLogin = async () => {
-    if (!username.trim() || !password) return setError('Enter your username or email and your password.');
+    if (!username.trim() || (!TEST_MODE && !password)) return setError(TEST_MODE ? 'Enter your name.' : 'Enter your email address and your password.');
     setBusy(true); setError('');
     try { await chat.login(username.trim(), password); }
     catch (e) { setError(e.message); setBusy(false); }
@@ -61,8 +61,9 @@ export default function LoginScreen() {
         })}
       </View>
 
-      <TextInput style={styles.input} placeholder="Username or email" placeholderTextColor={C.barMuted}
-        autoCapitalize="none" autoCorrect={false} textContentType="username" value={username} onChangeText={setUsername} />
+      <TextInput style={styles.input} placeholder={TEST_MODE ? 'Your name' : 'Email address'} placeholderTextColor={C.barMuted}
+        autoCapitalize={TEST_MODE ? 'words' : 'none'} autoCorrect={false} keyboardType={TEST_MODE ? 'default' : 'email-address'}
+        textContentType={TEST_MODE ? 'nickname' : 'username'} value={username} onChangeText={setUsername} />
       <TextInput style={styles.input} placeholder="Password" placeholderTextColor={C.barMuted}
         secureTextEntry textContentType="password" value={password} onChangeText={setPassword} onSubmitEditing={handleLogin} />
 
