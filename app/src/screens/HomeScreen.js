@@ -1,9 +1,10 @@
 // Main shell: bottom tabs + private chat overlay + member sheet. No navigation library needed.
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Modal, Pressable } from 'react-native';
-import { chat, useChat, listHere } from '../chat';
+import { chat, useChat, listHere, RAFFLE_PLATFORM } from '../chat';
 import { PLATFORMS, platformInfo } from '../platforms';
-import { Btn, clock, showError, PlatformLogo } from '../components';
+import { Btn, Header, clock, showError, PlatformLogo, RoomPicker } from '../components';
+import { RaffleGate, RaffleStaffBar } from './Raffle';
 import { C, themed, useTheme, setTheme, THEMES, PALETTES } from '../theme';
 import ChatScreen from './ChatScreen';
 import MessagesScreen from './MessagesScreen';
@@ -14,7 +15,7 @@ import AdminScreen from './AdminScreen';
 import MemberSheet from './MemberSheet';
 
 const TABS = [
-  ['general', '#', 'General'],
+  ['chat', '#', 'Chat'],
   ['messages', '✉', 'Messages'],
   ['friendlies', '🎯', 'Friendlies'],
   ['swap', '⇄', 'Dartswap'],
@@ -23,7 +24,8 @@ const TABS = [
 
 export default function HomeScreen() {
   const st = useChat();
-  const [tab, setTab] = useState('general');
+  const [tab, setTab] = useState('chat');
+  const [room, setRoom] = useState('general');  // chat tab: general | tournament | raffle
   const [dm, setDm] = useState(null);          // {room, other}
   const [admin, setAdmin] = useState(false);
   const [sheet, setSheet] = useState(null);    // user
@@ -70,7 +72,24 @@ export default function HomeScreen() {
   let body;
   if (dm) body = <ChatScreen room={dm.room} title={dm.other.name} subtitle={`Private chat · ${platformInfo(dm.room.split(':')[1]).name}${dm.other.role === 'admin' ? ' · DDL staff' : ''}`} onBack={() => { setDm(null); setTab('messages'); }} onUser={onUser} />;
   else if (admin) body = <AdminScreen onBack={() => setAdmin(false)} onUser={setSheet} />;
-  else if (tab === 'general') body = <ChatScreen key={st.platform} room={'general:' + st.platform} title="General chat" subtitle={`${here.name} community. Keep it friendly.`} onUser={onUser} right={headerRight} />;
+  else if (tab === 'chat') {
+    const hasRaffle = st.platform === RAFFLE_PLATFORM;
+    const r = room === 'raffle' && !hasRaffle ? 'general' : room;
+    const pendingRaffle = isAdmin ? (st.raffle?.requests || []).filter(x => x.status === 'pending').length : 0;
+    const rooms = [['general', 'General'], ['tournament', 'Tournament'], ...(hasRaffle ? [['raffle', '🔒 Raffles', pendingRaffle]] : [])];
+    const info = {
+      general: ['General chat', `${here.name} community. Keep it friendly.`],
+      tournament: ['Tournament', `${here.name} tournaments: draws, results, who plays next.`],
+      raffle: ['Raffles', 'Dartsmind raffles, for approved players.'],
+    }[r];
+    const picker = <RoomPicker rooms={rooms} value={r} onChange={setRoom} />;
+    if (r === 'raffle' && !isAdmin && st.raffle?.status !== 'approved') {
+      body = <RaffleGate header={<><Header title={info[0]} subtitle={info[1]} right={headerRight} />{picker}</>} />;
+    } else {
+      body = <ChatScreen key={r + st.platform} room={`${r}:${st.platform}`} title={info[0]} subtitle={info[1]} onUser={onUser} right={headerRight}
+        below={<>{picker}{r === 'raffle' && isAdmin && <RaffleStaffBar />}</>} />;
+    }
+  }
   else if (tab === 'messages') body = <MessagesScreen onOpen={openDM} />;
   else if (tab === 'friendlies') body = <FriendliesScreen onOpenDM={openDM} onUser={onUser} />;
   else if (tab === 'swap') body = <SwapScreen onUser={onUser} />;
@@ -97,7 +116,8 @@ export default function HomeScreen() {
       {!dm && !admin && (
         <View style={styles.tabs}>
           {TABS.map(([k, ic, label]) => {
-            const badge = k === 'messages' ? unreadDMs : k === 'help' && isAdmin ? openHelp : 0;
+            const badge = k === 'messages' ? unreadDMs : k === 'help' && isAdmin ? openHelp
+              : k === 'chat' && isAdmin ? (st.raffle?.requests || []).filter(x => x.status === 'pending').length : 0;
             const on = tab === k;
             return (
               <TouchableOpacity key={k} style={styles.tab} onPress={() => setTab(k)} accessibilityLabel={label}>
@@ -109,18 +129,23 @@ export default function HomeScreen() {
         </View>
       )}
       {sheet && <MemberSheet user={sheet} onClose={() => setSheet(null)} onChat={chatWith} />}
-      <Settings visible={settings} theme={theme} onClose={() => setSettings(false)} />
+      <Settings visible={settings} theme={theme} me={st.me} onClose={() => setSettings(false)} onModeration={() => { setSettings(false); setAdmin(true); }} />
     </View>
   );
 }
 
 // Settings: app background (DDL blue or white) + log out. The choice is saved on the phone.
-function Settings({ visible, theme, onClose }) {
+function Settings({ visible, theme, me, onClose, onModeration }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.scrim} onPress={onClose}>
         <Pressable style={styles.sheet} onPress={() => {}}>
           <Text style={styles.sheetTitle}>Settings</Text>
+          <Text style={{ color: C.muted, fontSize: 14 }}>
+            Logged in as <Text style={{ color: C.fg, fontWeight: '800' }}>{me?.name}</Text>
+            {me?.role === 'admin' ? ' · DDL staff' : ' · player'}
+          </Text>
+          {me?.role === 'admin' && <Btn kind="pri" title="Moderation (mute, kick, ban)" onPress={onModeration} />}
           <Text style={styles.label}>App background</Text>
           <View style={{ flexDirection: 'row', gap: 10 }}>
             {THEMES.map(([key, label]) => {

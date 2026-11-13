@@ -23,6 +23,23 @@ export function PlatformLogo({ platform, size = 24 }) {
   </View>;
 }
 
+// Chat rooms under the header: General / Tournament / Raffles. Each item: [key, label, badge?]
+export function RoomPicker({ rooms, value, onChange }) {
+  return (
+    <View style={s.rooms} accessibilityRole="tablist">
+      {rooms.map(([k, label, badge]) => {
+        const on = value === k;
+        return (
+          <TouchableOpacity key={k} onPress={() => onChange(k)} style={[s.room, on && s.roomOn]}
+            accessibilityRole="tab" accessibilityState={{ selected: on }} accessibilityLabel={label}>
+            <Text style={[s.roomTxt, on && { color: C.white }]}>{label}</Text>
+            {!!badge && <View style={s.roomBadge}><Text style={s.roomBadgeTxt}>{badge}</Text></View>}
+          </TouchableOpacity>);
+      })}
+    </View>
+  );
+}
+
 export function Btn({ title, onPress, kind = 'default', small, disabled, loading, style }) {
   const k = { pri: s.pri, danger: s.danger, ghost: s.ghost, default: s.def }[kind];
   return (
@@ -144,5 +161,11 @@ export const s = themed(C => ({
   label: { color: C.muted, fontSize: 11, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 5 },
   section: { color: C.muted, fontSize: 12, fontWeight: '800', letterSpacing: 1.6, textTransform: 'uppercase', marginTop: 18, marginBottom: 10 },
   toast: { position: 'absolute', left: 16, right: 16, bottom: 110, backgroundColor: C.navy2, padding: 12, borderRadius: R.md, borderWidth: 1, borderColor: C.line, zIndex: 99, elevation: 10 },
+  rooms: { flexDirection: 'row', gap: 6, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: C.navy, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
+  room: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.06)' },
+  roomOn: { backgroundColor: C.orange },
+  roomTxt: { color: C.barMuted, fontWeight: '800', fontSize: 13 },
+  roomBadge: { backgroundColor: C.white, borderRadius: 8, minWidth: 16, paddingHorizontal: 4, alignItems: 'center' },
+  roomBadgeTxt: { color: C.navy, fontSize: 10, fontWeight: '900' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
 }));

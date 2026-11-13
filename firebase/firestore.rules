@@ -5,12 +5,13 @@ rules_version = '2';
 //
 // Data
 //   users/{uid}                          name, nameLower, role, avatar, lastSeen
-//   rooms/{room}/messages/{id}           room = "general:<platform>" or "dm:<platform>:<uidA>:<uidB>" (uids sorted)
+//   rooms/{room}/messages/{id}           room = "general:<platform>", "tournament:<platform>" or "dm:<platform>:<uidA>:<uidB>" 
 //   dms/{room}                           one per private chat: members, users{uid:{name,role}}, lastAt, lastBy
 //   platforms/{p}/friendlies/{id}        "looking for a friendly" cards
 //   platforms/{p}/swap/{id}              Dartswap listings
 //   platforms/{p}/help/{id}              help desk questions (answers in an array)
 //   sanctions/{uid}                      mutedUntil, kickedUntil (timestamps), banned
+//   raffleAccess/{uid}                   raffle chat access: name, status pending|approved|declined|removed
 //   modlog/{id}                          staff actions
 //   staff/{uid}                          test mode only: staff who entered the staff code
 //   config/staff                         test mode only: { code: "..." } (set in the console, unreadable for the app)
@@ -51,18 +52,26 @@ service cloud.firestore {
     }
     function text(t, max) { return t is string && t.size() <= max && clean(t); }
     function picture(u) {
-      // Only pictures uploaded through the DDL site (php/chat-upload.php). Change the address if the upload folder moves.
-      return u == null || (u is string && u.matches('https://ddl-online\\.com/uploads/chat/[A-Za-z0-9-]+\\.jpg'));
+      // Pictures are shrunk by the app and stored in the document itself (JPEG, max ~400 KB).
+      return u == null || (u is string && u.size() < 400000 && u.matches('data:image/jpeg;base64,[A-Za-z0-9+/=]+'));
     }
     function inPlatforms(p) { return p in platforms(); }
     function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
 
-    // Room names: "general:<platform>" or "dm:<platform>:<uidA>:<uidB>" with uidA < uidB.
+    // Room names: "general:<platform>", "tournament:<platform>" or "dm:<platform>:<uidA>:<uidB>" with uidA < uidB.
     function roomOk(room) {
       let p = room.split(':');
-      return (p.size() == 2 && p[0] == 'general' && inPlatforms(p[1]))
+      return (p.size() == 2 && p[0] in ['general', 'tournament'] && inPlatforms(p[1]))
+        || (p.size() == 2 && p[0] == 'raffle' && p[1] == 'dartsmind')
         || (p.size() == 4 && p[0] == 'dm' && inPlatforms(p[1]) && p[2] < p[3] && (p[2] == me() || p[3] == me()));
     }
+
+    // Raffle chat: only staff and players whose access request staff approved.
+    function raffleApproved() {
+      return isAdmin() || (exists(/databases/$(database)/documents/raffleAccess/$(me()))
+        && get(/databases/$(database)/documents/raffleAccess/$(me())).data.status == 'approved');
+    }
+    function roomAccess(room) { return room.split(':')[0] != 'raffle' || raffleApproved(); }
 
     // ---------- users ----------
     match /users/{uid} {
@@ -79,8 +88,8 @@ service cloud.firestore {
 
     // ---------- messages ----------
     match /rooms/{room}/messages/{id} {
-      allow read: if canRead() && roomOk(room);
-      allow create: if canPost() && roomOk(room)
+      allow read: if canRead() && roomOk(room) && roomAccess(room);
+      allow create: if canPost() && roomOk(room) && roomAccess(room)
         && request.resource.data.keys().hasOnly(['uid', 'name', 'role', 'text', 'imageUrl', 'ts'])
         && request.resource.data.uid == me()
         && request.resource.data.name == myName()
@@ -147,6 +156,20 @@ service cloud.firestore {
       allow update: if canRead() && (
           isAdmin()
           || (resource.data.uid == me() && changed().hasOnly(['status']) && request.resource.data.status == 'solved'));
+    }
+
+    // ---------- raffle access requests ----------
+    match /raffleAccess/{uid} {
+      allow read: if signedIn() && (uid == me() || isAdmin());
+      // A player asks for access (again after a refusal); staff approve, decline or remove.
+      allow create: if canPost() && uid == me()
+        && request.resource.data.keys().hasOnly(['name', 'status', 'ts'])
+        && request.resource.data.name == myName() && request.resource.data.status == 'pending'
+        && request.resource.data.ts == request.time;
+      allow update: if (isAdmin() && changed().hasOnly(['status', 'by', 'decidedAt'])
+            && request.resource.data.status in ['approved', 'declined', 'removed'] && request.resource.data.by == me())
+        || (canPost() && uid == me() && resource.data.status in ['declined', 'removed']
+            && changed().hasOnly(['status', 'ts']) && request.resource.data.status == 'pending' && request.resource.data.ts == request.time);
     }
 
     // ---------- moderation ----------

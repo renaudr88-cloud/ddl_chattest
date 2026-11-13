@@ -46,7 +46,7 @@ export default function HelpScreen({ onOpenDM }) {
           <Text style={[ui.section, { marginTop: 0, marginBottom: 0 }]}>Ask the staff</Text>
           <TextInput style={[ui.input, { minHeight: 60, textAlignVertical: 'top' }]} multiline maxLength={300} value={q} onChangeText={setQ}
             placeholder="How, what, when, can I…? End with a question mark." placeholderTextColor={C.muted} />
-          <Text style={{ color: C.muted, fontSize: 12 }}>This room is for questions only. Chatting goes in General.</Text>
+          <Text style={{ color: C.muted, fontSize: 12 }}>Only you and the DDL staff see your question. Answered questions are shown to everyone. Chatting goes in General.</Text>
           {muted && <Notice text="You are muted and cannot post right now." />}
           <Btn kind="pri" title="Send question" loading={busy} disabled={muted} onPress={ask} />
         </View>}

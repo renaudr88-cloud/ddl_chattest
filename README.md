@@ -1,6 +1,6 @@
 # DDL Community Chat (Firebase)
 
-Community chat app for the Digital Darts League: General chat, private chats, Friendlies, Dartswap and a
+Community chat app for the Digital Darts League: General chat, Tournament chat, a Raffle chat (Dartsmind, by approval), private chats, Friendlies, Dartswap and a
 Help desk, separately for Dartsmind and Scolia, with a bad-word filter and staff moderation (mute, kick, ban).
 
 ```
@@ -18,14 +18,14 @@ firebase.json   rules + web hosting for `firebase deploy`
   │
   ├── signInWithCustomToken ──▶ Firebase Auth
   ├── live reads/writes ──────▶ Firestore  (checked by firebase/firestore.rules)
-  └── pictures ───────────────▶ php/chat-upload.php ──▶ ddl-online.com/uploads/chat/
+  └── pictures: shrunk on the phone (max 1000 px JPEG) and stored in the message in Firestore
 ```
 
 No chat server to run: Firebase keeps the data and sends changes live to every phone.
-Pictures stay on the DDL site, so the free Firebase plan (Spark) is enough to start.
+Pictures are stored in Firestore itself, so no paid Firebase Storage is needed: the free plan (Spark) is enough to start.
 
 **Test version** (`TEST_MODE = true` in `app/src/config.js`): players pick a name (Firebase anonymous sign-in),
-staff type the staff code as password, pictures are off. No PHP needed.
+staff type the staff code as password. No PHP needed.
 
 ## Set up Firebase (once)
 
@@ -71,22 +71,22 @@ It uses the site's own `db.php`, so no database password goes into the chat file
    This is the master key of the Firebase project: never put it in git or in a public folder.
 2. On the server, make a folder `private` **next to** the website folder (not inside it) and put the key there as
    `firebase-service-account.json`. (Path is `FIREBASE_SERVICE_ACCOUNT` in `php/chat-config.php`.)
-3. In `php/chat-config.php` set `CHAT_SECRET` to a long random string. Upload `chat-config.php`, `chat-login.php`
-   and `chat-upload.php` to the website folder, next to `index.php` and `db.php`.
+3. In `php/chat-config.php` set `CHAT_SECRET` to a long random string. Upload `chat-config.php` and `chat-login.php`
+   to the website folder, next to `index.php` and `db.php`. (`chat-upload.php` is no longer needed.)
 4. Check: `https://ddl-online.com/chat-login.php` in a browser must say `{"error":"Use POST."}`.
 5. Set `TEST_MODE = false` in `app/src/config.js`, build and deploy (`npm run build:web`, `firebase deploy`).
-   Pictures go to `uploads/chat/` in the website folder; if that address changes, also change `picture()` in the rules.
 
 ## Data (Firestore)
 
 | Path | What |
 |---|---|
 | `users/{uid}` | name, nameLower, role, avatar, lastSeen |
-| `rooms/{room}/messages/{id}` | room = `general:<platform>` or `dm:<platform>:<uidA>:<uidB>` |
+| `rooms/{room}/messages/{id}` | room = `general:<platform>`, `tournament:<platform>` or `dm:<platform>:<uidA>:<uidB>` |
 | `dms/{room}` | private chat list: members, users, lastAt, lastBy |
 | `platforms/{p}/friendlies/{id}` | FT3 / FT5 / Other cards, status open / matched / cancelled |
 | `platforms/{p}/swap/{id}` | Sell / Swap / Wanted, status open / done / deleted |
 | `platforms/{p}/help/{id}` | question, status open / solved / deleted, answers[] |
+| `raffleAccess/{uid}` | raffle chat access request: name, status pending / approved / declined / removed |
 | `sanctions/{uid}` | mutedUntil, kickedUntil, banned (written by staff) |
 | `modlog/{id}` | staff actions |
 | `staff/{uid}`, `config/staff` | test version staff code |
@@ -99,11 +99,12 @@ Platforms: `app/src/platforms.js` and `platforms()` in `firebase/firestore.rules
 - Muted players can read but not post.
 - Names: a DDL login always uses the name from its token, so nobody can post as someone else.
 - Private chats: only the two members can read them.
+- Raffle chat (`raffle:dartsmind`): only staff and players whose access request staff approved.
 - Help desk: players see their own questions and the solved ones; only staff answer.
 - Staff (DDL role admin, or test staff code) can delete messages and listings, mute, kick and ban; staff cannot sanction staff.
 - Bad words: blocked in the rules (plain words) and in the app (also "f.u.c.k", "k4nker").
   Lists: `app/src/filter.js` and `clean()` in `firebase/firestore.rules`.
-- Pictures: only from the DDL upload folder.
+- Pictures: only JPEG pictures made by the app, under 400 KB.
 
 The spam brake (6 posts per 6 seconds) is in the app only; Firestore rules cannot count posts.
 
@@ -114,3 +115,4 @@ Every app start reads roughly 200–300 documents (recent messages, friendlies, 
 active players a day the free reads run out and the chat stops until midnight (Pacific time). Before launch,
 switch to **Blaze** (pay per use, the free amounts stay free) and set a budget alert in Google Cloud.
 At that size, expect a few euros to about €20 a month, depending on how busy the chat is.
+Pictures make messages bigger (about 100–300 KB each): the free plan includes 10 GB of downloads a month.

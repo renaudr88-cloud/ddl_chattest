@@ -2,7 +2,8 @@
 // same actions the screens already use: chat.request('send', {...}), chat.requestHere('friendly.post', {...}), ...
 // Who may do what is decided by firebase/firestore.rules; the checks here only give quick, friendly feedback.
 import { useEffect, useState } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState, Platform, Image } from 'react-native';
+import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   signInAnonymously, signInWithCustomToken, signOut, onAuthStateChanged,
@@ -15,6 +16,7 @@ import { auth, db, FIREBASE_READY } from './firebase';
 import { TEST_MODE, LOGIN_URL, UPLOAD_URL } from './config';
 import { PLATFORMS } from './platforms';
 import { hasBad, isQuestion } from './filter';
+import { toast } from './components';
 
 const TOKEN_KEY = 'ddl-chat-token';       // DDL token for picture uploads (live mode)
 const READ_KEY = 'ddl-chat-read';
@@ -22,6 +24,8 @@ const PLATFORM_KEY = 'ddl-chat-platform';
 const PAGE = 40;                          // messages loaded per room (keeps Firestore reads low)
 const MIN = 60_000;
 const P_KEYS = PLATFORMS.map(p => p.key);
+export const RAFFLE_PLATFORM = 'dartsmind';             // raffles only exist on Dartsmind
+const RAFFLE_ROOM = 'raffle:' + RAFFLE_PLATFORM;
 
 const initial = {
   status: 'idle',          // idle | connecting | online | offline
@@ -34,6 +38,7 @@ const initial = {
   read: {},                // room -> time (ms) of the last message seen
   friendlies: {}, swap: {}, help: {}, // per platform: { dartsmind: [...], scolia: [...] }
   members: [], log: [],
+  raffle: { status: null, requests: [] }, // my raffle access (null|pending|approved|declined|removed); staff: all requests
   blocked: null,           // {reason:'banned'|'kicked', until}
 };
 
@@ -98,8 +103,15 @@ class ChatClient {
       if (hasBad(name)) throw new Error('Pick another name.');
       try { await signInAnonymously(auth); }
       catch (e) { throw new Error(e?.code === 'auth/operation-not-allowed' ? 'Turn on "Anonymous" sign-in in Firebase (Authentication > Sign-in method).' : 'Could not log in. Check your internet.'); }
-      if (password) { try { await setDoc(doc(db, 'staff', auth.currentUser.uid), { code: String(password) }); } catch {} }
+      let staff = null;
+      if (password) {
+        const ref = doc(db, 'staff', auth.currentUser.uid);
+        try { staff = (await getDoc(ref)).exists(); } catch {}
+        if (!staff) { try { await setDoc(ref, { code: String(password) }); staff = true; } catch { staff = false; } }
+      }
       await this.start(name);
+      if (staff === true) toast('Staff code accepted. You are logged in as DDL staff.');
+      if (staff === false) toast('Staff code not accepted: you are logged in as a player. Check config/staff in Firebase.', true);
       return;
     }
     // Live: log in with the ddl-online.com account (php/chat-login.php gives a Firebase token).
@@ -172,6 +184,7 @@ class ChatClient {
 
     for (const p of P_KEYS) {
       this.watchRoom('general:' + p, () => this.set({ status: 'online' }));
+      this.watchRoom('tournament:' + p);
       this.sub('friendlies:' + p, onSnapshot(query(collection(db, 'platforms', p, 'friendlies'), orderBy('ts', 'desc'), limit(60)), s => {
         const all = s.docs.map(d => this.outFriendly(d, p));
         const list = [...all.filter(f => f.status === 'open'), ...all.filter(f => f.status === 'matched').slice(0, 10)];
@@ -183,6 +196,20 @@ class ChatClient {
         this.set(st => ({ swap: { ...st.swap, [p]: list } }));
       }, onErr));
       this.watchHelp(p, onErr);
+    }
+
+    // Raffle chat (Dartsmind only): players need staff approval. Staff see every request.
+    this.sub('raffleMine', onSnapshot(doc(db, 'raffleAccess', this.uid), s => {
+      const status = s.exists() ? s.data().status : null;
+      this.set(st => ({ raffle: { ...st.raffle, status } }));
+      if (status === 'approved' || this.role === 'admin') this.watchRoom(RAFFLE_ROOM);
+      else { this.subs.get('room:' + RAFFLE_ROOM)?.(); this.subs.delete('room:' + RAFFLE_ROOM); }
+    }, onErr));
+    if (this.role === 'admin') {
+      this.sub('raffleAll', onSnapshot(query(collection(db, 'raffleAccess'), orderBy('ts', 'desc'), limit(200)), s => {
+        const requests = s.docs.map(d => { const x = d.data({ serverTimestamps: 'estimate' }); return { id: d.id, name: x.name, status: x.status, ts: ms(x.ts) }; });
+        this.set(st => ({ raffle: { ...st.raffle, requests } }));
+      }, onErr));
     }
 
     this.sub('dms', onSnapshot(query(collection(db, 'dms'), where('members', 'array-contains', this.uid)), s => {
@@ -336,6 +363,20 @@ class ChatClient {
   }
 
   actions = {
+    async 'raffle.request'() {
+      this.canPost();
+      const ref = doc(db, 'raffleAccess', this.uid);
+      const cur = await getDoc(ref);
+      if (cur.exists()) await updateDoc(ref, { status: 'pending', ts: serverTimestamp() });
+      else await setDoc(ref, { name: this.name, status: 'pending', ts: serverTimestamp() });
+    },
+    async 'raffle.decide'({ uid, status }) {
+      if (this.role !== 'admin') fail('forbidden', 'Staff only.');
+      if (!['approved', 'declined', 'removed'].includes(status)) fail('bad_input', 'Unknown choice.');
+      await updateDoc(doc(db, 'raffleAccess', uid), { status, by: this.uid, decidedAt: serverTimestamp() });
+      const r = this.state.raffle.requests.find(x => x.id === uid);
+      await this.log('raffle_' + status, { id: uid, name: r?.name || '' }, '');
+    },
     async history({ room }) { await this.watchRoom(room); return { room, messages: this.state.rooms[room] || [] }; },
 
     async send({ room, text, imageUrl }) {
@@ -492,20 +533,20 @@ class ChatClient {
     });
   }
 
-  /* ---------- pictures (through the DDL site, live mode only) ---------- */
+  /* ---------- pictures ----------
+     The phone shrinks the picture (max 1000 px, JPEG) and it is stored inside the message in Firestore,
+     so no extra server or paid Firebase Storage is needed. Rules allow up to 400 KB per picture. */
   async uploadImage(uri) {
-    if (!UPLOAD_URL) throw new Error('Pictures work once the chat is connected to ddl-online.com.');
-    const token = await AsyncStorage.getItem(TOKEN_KEY);
-    const form = new FormData();
-    if (Platform.OS === 'web') form.append('image', await (await fetch(uri)).blob(), 'photo.jpg');
-    else form.append('image', { uri, name: 'photo.jpg', type: 'image/jpeg' });
-    let res, data;
-    try {
-      res = await fetch(UPLOAD_URL, { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form });
-      data = await res.json();
-    } catch { throw new Error('Upload failed. Check your connection.'); }
-    if (!res.ok) throw new Error(data?.error || 'Upload failed.');
-    return data.url;
+    const { width, height } = await new Promise((res, rej) => Image.getSize(uri, (w, h) => res({ width: w, height: h }), rej))
+      .catch(() => ({ width: 1000, height: 1000 }));
+    let out = null;
+    for (const [max, q] of [[1000, 0.6], [800, 0.45], [640, 0.35]]) {
+      const resize = width >= height ? { width: Math.min(width, max) } : { height: Math.min(height, max) };
+      const r = await manipulateAsync(uri, [{ resize }], { compress: q, format: SaveFormat.JPEG, base64: true });
+      out = 'data:image/jpeg;base64,' + r.base64;
+      if (out.length < 380_000) return out;
+    }
+    throw new Error('That picture is too large. Try another one.');
   }
 }
 
@@ -518,7 +559,7 @@ export function useChat() {
 }
 
 export const isMuted = me => !!me?.sanction?.muted_until && me.sanction.muted_until > Date.now();
-export const CAN_UPLOAD = !!UPLOAD_URL;
+export const CAN_UPLOAD = true;
 
 // The list of friendlies / swap / help for the platform the player is looking at.
 export const listHere = (st, key) => st[key]?.[st.platform] || [];

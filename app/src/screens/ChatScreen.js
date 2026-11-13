@@ -7,7 +7,7 @@ import { hasBad } from '../filter';
 import { Avatar, Header, Notice, RoleTag, Lightbox, Empty, timeLabel, clock, toast, showError } from '../components';
 import { C, R, themed, useTheme } from '../theme';
 
-export default function ChatScreen({ room, title, subtitle, onBack, onUser, right }) {
+export default function ChatScreen({ room, title, subtitle, onBack, onUser, right, below }) {
   const st = useChat();
   const theme = useTheme();
   const [text, setText] = useState('');
@@ -69,6 +69,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
       <Header title={title} subtitle={subtitle} onBack={onBack} right={right} />
+      {below}
       {st.status !== 'online' && <Text style={styles.conn}>{st.status === 'connecting' ? 'Connecting…' : 'Offline. Reconnecting…'}</Text>}
       {!list ? <ActivityIndicator color={C.orange} style={{ marginTop: 40 }} /> :
         <FlatList
@@ -85,7 +86,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
         <View style={styles.row}>
           {CAN_UPLOAD && <TouchableOpacity style={styles.icon} onPress={pick} disabled={muted} accessibilityLabel="Add a picture"><Text style={{ fontSize: 20 }}>📷</Text></TouchableOpacity>}
           <TextInput style={styles.input} value={text} onChangeText={setText} multiline maxLength={1000} editable={!muted}
-            placeholder={room.startsWith('general:') ? 'Message the community…' : 'Write a private message…'} placeholderTextColor={C.muted} />
+            placeholder={room.startsWith('dm:') ? 'Write a private message…' : room.startsWith('tournament:') ? 'Message about tournaments…' : 'Message the community…'} placeholderTextColor={C.muted} />
           <TouchableOpacity style={[styles.send, (muted || sending) && { opacity: 0.45 }]} onPress={send} disabled={muted || sending}>
             {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendTxt}>SEND</Text>}
           </TouchableOpacity>
