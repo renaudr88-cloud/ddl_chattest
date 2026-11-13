@@ -44,11 +44,28 @@ npm install
 npx expo start     # scan the QR code with Expo Go, or press w for the browser
 ```
 
-Log in with any name and any password. "Renaud" is an admin (change with `DEV_ADMINS=renaud,ash`).
+Players log in with any name and any password. Staff names (in `server/dev.js`, `STAFF_NAMES`) get admin
+rights and need the staff password. The server makes that password once, keeps it in
+`server/.dev-staff-password` (not in git) and prints it when it starts.
 Log in on a second phone or browser tab with another name to chat with yourself.
 The app finds the computer's address by itself; the phone only needs to be on the same Wi-Fi.
 Test mode only switches on with `DB_DRIVER=memory`, so it can never run against the real database.
 For the real servers set `TEST_MODE = false`.
+
+## Let others test (share a link)
+
+Testers open a link in their phone's browser: nothing to install, no Expo account.
+Your computer runs the test server; a free Cloudflare tunnel makes it reachable from the internet.
+
+1. Build the web version once (again after each update): in `app/` run `npm run build:web`
+2. Start the test server: in `server/` run `npm run dev` (it now also serves the app at http://localhost:8080)
+3. Install the tunnel once (Windows): `winget install --id Cloudflare.cloudflared`
+4. In a new terminal: `cloudflared tunnel --url http://localhost:8080`
+   It prints a link like `https://something-random.trycloudflare.com`. Share that link with the testers.
+
+- The link works as long as your computer is on and both windows stay open. You get a new link every time.
+- Testers pick their own name; staff names need the staff password, so nobody can pose as staff.
+- Everything is wiped when you stop the server.
 
 ## 1. Database
 

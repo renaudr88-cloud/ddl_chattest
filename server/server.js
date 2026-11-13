@@ -390,12 +390,19 @@ async function onAuth(ws, token) {
 
 /* ---------------- test mode: login + picture upload without PHP ---------------- */
 const DEV_UPLOADS = path.join(__dirname, 'dev-uploads');
-const DEV_ADMINS = (process.env.DEV_ADMINS || 'renaud').split(',').map(s => s.trim().toLowerCase());
+const DEV_ADMINS = (process.env.DEV_ADMINS || 'renaud').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+const DEV_ADMIN_PASSWORD = process.env.DEV_ADMIN_PASSWORD || '';
+const DEV_WEB = path.join(__dirname, '..', 'app', 'dist');   // web version of the app (npx expo export --platform web)
+const WEB_TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.ttf': 'font/ttf', '.svg': 'image/svg+xml', '.webp': 'image/webp' };
 const IMG_TYPES = { jpg: [0xff, 0xd8], png: [0x89, 0x50], gif: [0x47, 0x49], webp: [0x52, 0x49] };
-function devToken(name) {
+// Staff names (DEV_ADMINS) only log in with DEV_ADMIN_PASSWORD, so testers cannot pose as staff.
+function devToken(name, password) {
   const clean = String(name || '').trim().slice(0, 30);
   const uid = 'dev-' + clean.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  const role = DEV_ADMINS.includes(clean.toLowerCase()) ? 'admin' : 'player';
+  const isStaff = DEV_ADMINS.includes(clean.toLowerCase());
+  if (isStaff && (!DEV_ADMIN_PASSWORD || String(password || '') !== DEV_ADMIN_PASSWORD)) return null;
+  const role = isStaff ? 'admin' : 'player';
   const body = Buffer.from(JSON.stringify({ uid, name: clean, role, exp: Math.floor(now() / 1000) + 30 * 86400 })).toString('base64url');
   return { token: body + '.' + crypto.createHmac('sha256', CFG.secret).update(body).digest('base64url'), user: { id: uid, name: clean, role, avatar: null } };
 }
@@ -426,7 +433,9 @@ async function devHttp(req, res) {
     if (req.method === 'POST' && req.url === '/dev-login') {
       let data = {}; try { data = JSON.parse((await readBody(req, 10_000)).toString('utf8') || '{}'); } catch {}
       if (!String(data.login || '').trim()) return json(400, { error: 'Enter a name to test with.' });
-      return json(200, devToken(data.login));
+      const tok = devToken(data.login, data.password);
+      if (!tok) return json(401, { error: 'This name is for DDL staff. Use the staff password, or pick another name.' });
+      return json(200, tok);
     }
     if (req.method === 'POST' && req.url === '/dev-upload') {
       if (!verifyToken(String(req.headers.authorization || '').replace(/^Bearer\s+/i, ''))) return json(401, { error: 'Log in again.' });
@@ -436,12 +445,21 @@ async function devHttp(req, res) {
       fs.mkdirSync(DEV_UPLOADS, { recursive: true });
       const name = 'dev-' + crypto.randomBytes(12).toString('hex') + '.' + ext;
       fs.writeFileSync(path.join(DEV_UPLOADS, name), img);
-      return json(200, { url: `http://${req.headers.host}/uploads/${name}` });
+      const proto = String(req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim() === 'https' ? 'https' : 'http';
+      return json(200, { url: `${proto}://${req.headers.host}/uploads/${name}` });
     }
     const up = /^\/uploads\/(dev-[a-f0-9]{24}\.(jpg|png|gif|webp))$/.exec(req.url);
     if (req.method === 'GET' && up && fs.existsSync(path.join(DEV_UPLOADS, up[1]))) {
       res.writeHead(200, { 'content-type': up[2] === 'jpg' ? 'image/jpeg' : 'image/' + up[2], 'cache-control': 'max-age=86400' });
       return fs.createReadStream(path.join(DEV_UPLOADS, up[1])).pipe(res);
+    }
+    // The web version of the app, so testers only need a link (see README, "Let others test").
+    if (req.method === 'GET' && !req.url.startsWith('/chat') && req.url !== '/health' && fs.existsSync(path.join(DEV_WEB, 'index.html'))) {
+      const rel = decodeURIComponent(req.url.split('?')[0]);
+      let file = path.normalize(path.join(DEV_WEB, rel));
+      if (!file.startsWith(DEV_WEB) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DEV_WEB, 'index.html');
+      res.writeHead(200, { 'content-type': WEB_TYPES[path.extname(file)] || 'application/octet-stream' });
+      return fs.createReadStream(file).pipe(res);
     }
   } catch (e) { return json(e.message === 'too_large' ? 413 : 500, { error: e.message === 'too_large' ? 'That picture is too big (max 10 MB).' : 'Something went wrong.' }); }
   return false;
@@ -520,6 +538,10 @@ setInterval(() => {
   for (const s of await db.sanctions.all()) sanctions.set(String(s.user_id), { ...s, user_id: String(s.user_id) });
   server.listen(CFG.port, () => {
     console.log(`DDL Chat listening on :${CFG.port}${CFG.path} (${process.env.DB_DRIVER || 'mysql'})`);
-    if (CFG.dev) console.log('TEST MODE: no database, log in with any name (admins: ' + DEV_ADMINS.join(', ') + '). Messages are lost when you stop the server.');
+    if (CFG.dev) {
+      console.log('TEST MODE: no database. Players log in with any name. Messages are lost when you stop the server.');
+      console.log('Staff (admin) names: ' + DEV_ADMINS.join(', ') + (DEV_ADMIN_PASSWORD ? ' - they need the staff password' : ' - no staff password set, staff login is off'));
+      console.log(fs.existsSync(path.join(DEV_WEB, 'index.html')) ? `Web version of the app: http://localhost:${CFG.port}` : 'No web version yet (run "npx expo export --platform web" in app/ to let testers use a link).');
+    }
   });
 })().catch(e => { console.error('Startup failed:', e); process.exit(1); });

@@ -1,9 +1,28 @@
 'use strict';
 // Test mode: run the chat on your own computer without a database and without the PHP site.
 //   npm run dev
-// Log in from the app with any name (any password). "Renaud" is an admin; change with DEV_ADMINS=renaud,ash
+// Players log in with any name and any password. Staff names below are admins and need the staff password.
 // Everything is kept in memory and is gone when you stop the server (Ctrl+C).
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+
+// ===== Staff (admin) names =====
+// These names get admin rights: STAFF button, mute, kick, ban, delete messages, answer the help desk.
+// Not case sensitive. Add staff by adding their name, e.g. ['Renaud', 'renaud_ddl', 'Ash'].
+const STAFF_NAMES = ['Renaud', 'renaud_ddl'];
+// ===============================
+
+// Staff names need the staff password. It is made once, saved on this computer only
+// (server/.dev-staff-password, never uploaded to GitHub) and shown when the server starts.
+// To choose your own, put it in that file.
+const PW_FILE = path.join(__dirname, '.dev-staff-password');
+if (!fs.existsSync(PW_FILE)) fs.writeFileSync(PW_FILE, 'ddl-' + crypto.randomBytes(4).toString('hex') + '\n');
+const STAFF_PASSWORD = fs.readFileSync(PW_FILE, 'utf8').trim();
+
 Object.assign(process.env, {
+  DEV_ADMINS: process.env.DEV_ADMINS || STAFF_NAMES.join(','),
+  DEV_ADMIN_PASSWORD: process.env.DEV_ADMIN_PASSWORD || STAFF_PASSWORD,
   DB_DRIVER: 'memory',
   DEV_MODE: '1',
   CHAT_SECRET: process.env.CHAT_SECRET || 'dev-only-secret-not-for-production-123456',
@@ -39,4 +58,4 @@ async function seed() {
   await db.help.add({ platform: 'dartsmind', user_id: users.jordy.id, question: 'How do I report a no-show from my opponent?', status: 'open', created_at: t + 13 * 60_000 });
 }
 
-seed().then(() => require('./server')).catch(e => { console.error(e); process.exit(1); });
+seed().then(() => { require('./server'); console.log('Staff password: ' + process.env.DEV_ADMIN_PASSWORD + '  (only for: ' + STAFF_NAMES.join(', ') + ')'); }).catch(e => { console.error(e); process.exit(1); });
