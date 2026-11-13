@@ -7,14 +7,26 @@
     "icon": "./assets/ddl-logo.png",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#011E51",
-    "splash": { "image": "./assets/ddl-logo.png", "resizeMode": "contain", "backgroundColor": "#011E51" },
+    "splash": {
+      "image": "./assets/ddl-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#011E51"
+    },
     "ios": {
       "supportsTablet": true,
-      "infoPlist": { "NSPhotoLibraryUsageDescription": "Choose pictures to share in the DDL chat." }
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Choose pictures to share in the DDL chat.",
+        "NSCameraUsageDescription": "Take photos of your darts gear for Dartswap."
+      }
     },
     "android": {
-      "adaptiveIcon": { "foregroundImage": "./assets/ddl-logo.png", "backgroundColor": "#011E51" }
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/ddl-logo.png",
+        "backgroundColor": "#011E51"
+      }
     },
-    "web": { "favicon": "./assets/ddl-logo.png" }
+    "web": {
+      "favicon": "./assets/ddl-logo.png"
+    }
   }
 }

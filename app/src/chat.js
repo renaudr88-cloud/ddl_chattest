@@ -315,7 +315,7 @@ class ChatClient {
   outSwap(d, p) {
     const x = d.data({ serverTimestamps: 'estimate' });
     return { id: d.id, platform: p, user: userOf(x), kind: x.kind, title: x.title, price: x.price || '', cond: x.cond,
-      desc: x.desc || '', imageUrl: x.imageUrl || null, status: x.status, ts: ms(x.ts) };
+      desc: x.desc || '', images: x.images || (x.imageUrl ? [x.imageUrl] : []), status: x.status, ts: ms(x.ts) };
   }
   outHelp(d, p) {
     const x = d.data({ serverTimestamps: 'estimate' });
@@ -446,13 +446,14 @@ class ChatClient {
       return r;
     },
 
-    async 'swap.post'({ platform, kind, title, price, cond, desc, imageUrl }) {
+    async 'swap.post'({ platform, kind, title, price, cond, desc, images }) {
       if (!['Sell', 'Swap', 'Wanted'].includes(kind)) fail('bad_input', 'Pick Sell, Swap or Wanted.');
       title = String(title || '').trim().slice(0, 70); desc = String(desc || '').trim().slice(0, 400); cond = String(cond || 'Used').trim().slice(0, 20);
       price = kind === 'Sell' ? String(price || '').replace(/[^\d.,]/g, '').slice(0, 12) : '';
       if (!title) fail('bad_input', 'Add a title.');
       this.canPost(title + ' ' + desc + ' ' + cond, 'Your listing');
-      const ref = await addDoc(collection(db, 'platforms', platform, 'swap'), { ...this.mine(), kind, title, price, cond, desc, imageUrl: imageUrl || null, status: 'open', ts: serverTimestamp() });
+      images = (images || []).slice(0, 3);
+      const ref = await addDoc(collection(db, 'platforms', platform, 'swap'), { ...this.mine(), kind, title, price, cond, desc, images, status: 'open', ts: serverTimestamp() });
       return { id: ref.id };
     },
     async 'swap.done'({ id }) { await updateDoc(doc(db, 'platforms', this.platformOf('swap', id), 'swap', id), { status: 'done' }); },
@@ -543,7 +544,7 @@ class ChatClient {
   /* ---------- pictures ----------
      The phone shrinks the picture (max 1000 px, JPEG) and it is stored inside the message in Firestore,
      so no extra server or paid Firebase Storage is needed. Rules allow up to 400 KB per picture. */
-  async uploadImage(uri) {
+  async uploadImage(uri, maxChars = 380_000) {
     const { width, height } = await new Promise((res, rej) => Image.getSize(uri, (w, h) => res({ width: w, height: h }), rej))
       .catch(() => ({ width: 1000, height: 1000 }));
     let out = null;
@@ -551,7 +552,7 @@ class ChatClient {
       const resize = width >= height ? { width: Math.min(width, max) } : { height: Math.min(height, max) };
       const r = await manipulateAsync(uri, [{ resize }], { compress: q, format: SaveFormat.JPEG, base64: true });
       out = 'data:image/jpeg;base64,' + r.base64;
-      if (out.length < 380_000) return out;
+      if (out.length < maxChars) return out;
     }
     throw new Error('That picture is too large. Try another one.');
   }
