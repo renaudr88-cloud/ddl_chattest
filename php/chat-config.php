@@ -22,6 +22,11 @@ const COL_ROLE      = 'role';      // set to null to use ADMIN_IDS only
 const ADMIN_ROLES   = ['admin', 'staff', 'moderator'];
 const ADMIN_IDS     = [];          // extra admins by user id, e.g. [1, 2]
 
+// Firebase: the service account key file of your Firebase project.
+// Firebase console > Project settings > Service accounts > Generate new private key.
+// Keep this file OUTSIDE the public web root and never upload it to GitHub: it is the master key of the project.
+const FIREBASE_SERVICE_ACCOUNT = __DIR__ . '/../private/firebase-service-account.json';
+
 // Pictures
 const UPLOAD_DIR      = __DIR__ . '/../uploads/chat/';            // folder on disk, writable by PHP
 const UPLOAD_BASE_URL = 'https://ddl-online.com/uploads/chat/';   // public URL of that folder (same as server/.env)
@@ -69,4 +74,29 @@ function chat_bearer(): ?string {
     $h = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
     if (!$h && function_exists('getallheaders')) { $all = getallheaders(); $h = $all['Authorization'] ?? $all['authorization'] ?? ''; }
     return preg_match('/^Bearer\s+(\S+)$/i', $h, $m) ? $m[1] : null;
+}
+
+// Firebase custom token (RS256 JWT signed with the service account key). The app signs in with it;
+// the claims ddlName and ddlRole are what firebase/firestore.rules check.
+function firebase_custom_token(string $uid, array $claims): string {
+    $sa = json_decode((string)@file_get_contents(FIREBASE_SERVICE_ACCOUNT), true);
+    if (!$sa || empty($sa['private_key']) || empty($sa['client_email'])) {
+        throw new RuntimeException('Firebase service account file missing or invalid');
+    }
+    $now = time();
+    $header = b64url(json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
+    $payload = b64url(json_encode([
+        'iss' => $sa['client_email'],
+        'sub' => $sa['client_email'],
+        'aud' => 'https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit',
+        'iat' => $now,
+        'exp' => $now + 3600,
+        'uid' => $uid,
+        'claims' => $claims,
+    ], JSON_UNESCAPED_UNICODE));
+    $key = openssl_pkey_get_private($sa['private_key']);
+    if (!$key || !openssl_sign($header . '.' . $payload, $sig, $key, OPENSSL_ALGO_SHA256)) {
+        throw new RuntimeException('Could not sign the Firebase token');
+    }
+    return $header . '.' . $payload . '.' . b64url($sig);
 }

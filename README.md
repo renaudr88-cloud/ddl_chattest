@@ -1,195 +1,110 @@
-# DDL Community Chat
+# DDL Community Chat (Firebase)
 
-Code for the DDL chat app: a WebSocket server, two PHP endpoints that plug into the existing DDL
-account system, and the Expo (React Native) app screens built on the login screen you started.
+Community chat app for the Digital Darts League: General chat, private chats, Friendlies, Dartswap and a
+Help desk, separately for Dartsmind and Scolia, with a bad-word filter and staff moderation (mute, kick, ban).
 
 ```
-ddl-chat/
-├── server/        Node.js WebSocket server (runs on the socket you opened)
-├── sql/           MySQL tables (run once in the DDL database)
-├── php/           chat-login.php, chat-upload.php, chat-config.php
-└── app/           Expo app: App.js + src/ (drop into the Expo project)
+app/        Expo (React Native) app, also runs in the browser
+firebase/   firestore.rules: who may read and write what (this is the "server")
+php/        chat-login.php (DDL account -> Firebase sign-in), chat-upload.php (pictures), chat-config.php
+firebase.json   rules + web hosting for `firebase deploy`
 ```
 
 ## How it fits together
 
 ```
- App ──POST login/password──▶ php/chat-login.php ──▶ users table (password_verify)
-  │◀────────── signed token (HMAC, 30 days) ─────────┘
+ App ──name + password──▶ php/chat-login.php ──▶ DDL users table (password_verify)
+  │◀── Firebase custom token (uid "ddl-<id>", claims ddlName, ddlRole) + upload token
   │
-  ├──wss://…/chat  {type:"auth", token} ──▶ server/server.js ──▶ chat_* tables
-  │                                         (verifies the same token with CHAT_SECRET)
-  └──POST picture + Bearer token ──▶ php/chat-upload.php ──▶ /uploads/chat/*.jpg
+  ├── signInWithCustomToken ──▶ Firebase Auth
+  ├── live reads/writes ──────▶ Firestore  (checked by firebase/firestore.rules)
+  └── pictures ───────────────▶ php/chat-upload.php ──▶ ddl-online.com/uploads/chat/
 ```
 
-PHP and Node never talk to each other. They share one secret (`CHAT_SECRET`), so a token signed
-by PHP is trusted by the socket server. Roles (player/admin) come from the DDL users table at login.
+No chat server to run: Firebase keeps the data and sends changes live to every phone.
+Pictures stay on the DDL site, so the free Firebase plan (Spark) is enough to start.
 
-## Test on your own computer (no database, no PHP)
+**Test version** (`TEST_MODE = true` in `app/src/config.js`): players pick a name (Firebase anonymous sign-in),
+staff type the staff code as password, pictures are off. No PHP needed.
 
-The server has a test mode that keeps everything in memory and has its own login and picture upload.
-The app starts in test mode (`TEST_MODE = true` in `app/src/config.js`).
+## Set up Firebase (once)
 
-```
-cd server
-npm install
-npm run dev        # test server on port 8080, with a few example messages
-```
+1. https://console.firebase.google.com → **Create a project** → name `ddl-chat` (Google Analytics can be off).
+2. **Build → Firestore Database → Create database** → location `europe-west1 (Belgium)` → **production mode**.
+3. **Build → Authentication → Get started → Sign-in method → Anonymous → Enable** (for the test version).
+4. **Project settings (gear) → Your apps → Web (`</>`)** → name `DDL Chat` → Register.
+   Copy the `firebaseConfig` values into `app/src/firebaseConfig.js`.
+5. **Firestore → Rules**: replace everything with the content of `firebase/firestore.rules` → **Publish**.
+6. Staff code for the test version: **Firestore → Data → Start collection** `config` → document ID `staff` →
+   field `code` (string) = a code you only give to staff.
 
-In a second terminal:
+## Run the app
 
 ```
 cd app
 npm install
-npx expo start     # scan the QR code with Expo Go, or press w for the browser
+npx expo start      # scan the QR code with Expo Go, or press w for the browser
 ```
 
-Players log in with any name and any password. Staff names (in `server/dev.js`, `STAFF_NAMES`) get admin
-rights and need the staff password. The server makes that password once, keeps it in
-`server/.dev-staff-password` (not in git) and prints it when it starts.
-Log in on a second phone or browser tab with another name to chat with yourself.
-The app finds the computer's address by itself; the phone only needs to be on the same Wi-Fi.
-Test mode only switches on with `DB_DRIVER=memory`, so it can never run against the real database.
-For the real servers set `TEST_MODE = false`.
+## Let others test (a fixed link, your computer can be off)
 
-## Let others test (share a link)
-
-Testers open a link in their phone's browser: nothing to install, no Expo account.
-Your computer runs the test server; a free Cloudflare tunnel makes it reachable from the internet.
-
-1. Build the web version once (again after each update): in `app/` run `npm run build:web`
-2. Start the test server: in `server/` run `npm run dev` (it now also serves the app at http://localhost:8080)
-3. Install the tunnel once (Windows): `winget install --id Cloudflare.cloudflared`
-4. In a new terminal: `cloudflared tunnel --url http://localhost:8080`
-   It prints a link like `https://something-random.trycloudflare.com`. Share that link with the testers.
-
-- The link works as long as your computer is on and both windows stay open. You get a new link every time.
-- Testers pick their own name; staff names need the staff password, so nobody can pose as staff.
-- Everything is wiped when you stop the server.
-
-## 1. Database
+Firebase Hosting serves the web version of the app for free at `https://<project-id>.web.app`.
 
 ```
-mysql -u <user> -p <ddl_db> < sql/schema.sql
+npm install -g firebase-tools     # once
+firebase login                    # once
+firebase use --add                # once, pick the ddl-chat project
+cd app && npm run build:web && cd ..
+firebase deploy                   # publishes the rules and the web app
 ```
 
-Creates `chat_users`, `chat_messages`, `chat_friendlies`, `chat_swap`, `chat_help`,
-`chat_help_answers`, `chat_sanctions`, `chat_mod_log`. Nothing in the existing tables is changed.
+Run `npm run build:web` and `firebase deploy` again after each update. `firebase deploy` also publishes
+`firebase/firestore.rules`, so step 5 above is then done for you.
 
-## 2. PHP endpoints
+## Go live with DDL accounts (Stevey)
 
-1. Copy the three files from `php/` to the site (e.g. the web root of ddl-online.com).
-2. Edit `chat-config.php`:
-   - `CHAT_SECRET`: a long random string (`openssl rand -base64 48`), same value as in `server/.env`.
-   - DB credentials, and the column names of the users table (`COL_USERNAME`, `COL_EMAIL`,
-     `COL_PASSWORD`, `COL_ROLE`). Passwords must be `password_hash()` hashes; if the site uses
-     something else, change the one `password_verify` line in `chat-login.php`.
-   - Who is admin: `ADMIN_ROLES` (values in the role column) and/or `ADMIN_IDS`.
-   - `UPLOAD_DIR` / `UPLOAD_BASE_URL`: where pictures are stored and served.
-3. PHP needs PDO MySQL and GD (with WebP). APCu is optional (login brute-force brake).
+1. Firebase console → **Project settings → Service accounts → Generate new private key**.
+   Put the JSON file on the DDL server **outside the web root**; never in git. Path in `php/chat-config.php`.
+2. Upload `php/chat-login.php`, `php/chat-upload.php`, `php/chat-config.php`; fill in `chat-config.php`
+   (database, users table columns, admin roles, upload folder, `CHAT_SECRET`). PHP needs `openssl`, PDO MySQL and GD.
+3. Set `TEST_MODE = false` in `app/src/config.js`. If the upload folder is not `https://ddl-online.com/uploads/chat/`,
+   change the address in `picture()` in `firebase/firestore.rules`.
+4. Test the PHP login: a POST with `{"login":"...","password":"..."}` must return `token`, `firebaseToken` and `user`.
 
-Upload re-encodes every picture with GD, which strips EXIF/GPS data and anything hidden in the file.
+## Data (Firestore)
 
-## 3. Socket server
+| Path | What |
+|---|---|
+| `users/{uid}` | name, nameLower, role, avatar, lastSeen |
+| `rooms/{room}/messages/{id}` | room = `general:<platform>` or `dm:<platform>:<uidA>:<uidB>` |
+| `dms/{room}` | private chat list: members, users, lastAt, lastBy |
+| `platforms/{p}/friendlies/{id}` | FT3 / FT5 / Other cards, status open / matched / cancelled |
+| `platforms/{p}/swap/{id}` | Sell / Swap / Wanted, status open / done / deleted |
+| `platforms/{p}/help/{id}` | question, status open / solved / deleted, answers[] |
+| `sanctions/{uid}` | mutedUntil, kickedUntil, banned (written by staff) |
+| `modlog/{id}` | staff actions |
+| `staff/{uid}`, `config/staff` | test version staff code |
 
-```
-cd server
-cp .env.example .env      # fill in CHAT_SECRET, DB_*, UPLOAD_BASE_URL
-npm install
-npm test                  # 39 end-to-end checks against an in-memory database
-npm start                 # listens on PORT (default 8080), path /chat
-```
+Platforms: `app/src/platforms.js` and `platforms()` in `firebase/firestore.rules` (keep them the same).
 
-Keep it running with pm2 or systemd, e.g. `pm2 start server.js --name ddl-chat`.
+## What the rules enforce
 
-Behind nginx (TLS on the same domain):
+- Everyone must be signed in; banned and kicked players cannot read or write anything.
+- Muted players can read but not post.
+- Names: a DDL login always uses the name from its token, so nobody can post as someone else.
+- Private chats: only the two members can read them.
+- Help desk: players see their own questions and the solved ones; only staff answer.
+- Staff (DDL role admin, or test staff code) can delete messages and listings, mute, kick and ban; staff cannot sanction staff.
+- Bad words: blocked in the rules (plain words) and in the app (also "f.u.c.k", "k4nker").
+  Lists: `app/src/filter.js` and `clean()` in `firebase/firestore.rules`.
+- Pictures: only from the DDL upload folder.
 
-```nginx
-location /chat {
-    proxy_pass http://127.0.0.1:8080;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-    proxy_read_timeout 120s;
-}
-```
+The spam brake (6 posts per 6 seconds) is in the app only; Firestore rules cannot count posts.
 
-`GET /health` returns `{ok, online}` for monitoring.
-One Node process handles 1000+ concurrent players without trouble. If it ever needs more than one
-process, the in-memory socket map in `server.js` would have to move to Redis pub/sub.
+## Costs
 
-## 4. Expo app
-
-`app/` is a complete Expo project (SDK 58): `cd app`, `npm install`, `npx expo start`.
-For the live servers set `TEST_MODE = false` in `src/config.js` and check the three URLs there. Your `LoginScreen` is kept and wired to `chat-login.php`.
-Colours live in `src/theme.js` (two palettes; styles are built with `themed(C => ({…}))` so they follow the chosen background). No navigation library is needed; tabs live in `src/screens/HomeScreen.js`.
-Image picking uses `mediaTypes: ['images']` (Expo SDK 52+).
-
-## Platforms (Dartsmind, Scolia)
-
-Every platform has its **own** General chat, Friendlies, Dartswap, Help desk and private chats, so
-nothing gets mixed up. Players switch with the bar at the top of the app; the app remembers the last one.
-Shared across platforms: the DDL account, and mute / kick / ban (a muted player is muted everywhere).
-
-- Server: `PLATFORMS=dartsmind,scolia` in `server/.env`
-- App: `src/platforms.js` (name, colour, logo). Logos are in `app/assets/` (dartsmind.png, scolia.png).
-- Rooms are named `general:<platform>` and `dm:<platform>:<idA>:<idB>`; friendlies, swap and help
-  rows carry a `platform` column. Requests `dm.open`, `friendly.post`, `swap.post` and `help.ask`
-  take a `platform` field; pushed `friendlies` / `swap` / `help` events say which platform they are for.
-- Adding DartCounter later: add `dartcounter` to `PLATFORMS` and one line in `src/platforms.js`.
-
-## Features and where they live
-
-| Feature | Server (enforced) | App |
-|---|---|---|
-| General chat + pictures | `send`, `history`, `delete` | `ChatScreen.js` |
-| Private chat | rooms `dm:<idA>:<idB>`, only those two can read | `MessagesScreen.js`, `ChatScreen.js` |
-| Friendlies (FT3 / FT5 / Other) | one open card per player; Accept opens a private chat | `FriendliesScreen.js` |
-| Bad-word filter (EN + NL) | `filter.js`, checks every text; also catches `f.u.c.k`, `k4nker` | same filter in `src/filter.js` for instant feedback |
-| Mute / kick / ban | `mod`; kick and ban disconnect live and block reconnect; banned players can't log in | `MemberSheet.js`, `AdminScreen.js` |
-| Help desk | questions only (`isQuestion`); only staff answer; staff can move a question to a private chat; players see their own + solved questions | `HelpScreen.js` |
-| Dartswap | Sell / Swap / Wanted with photo, price, condition | `SwapScreen.js` |
-| Moderation log | every mute, kick, ban, unban and staff delete | `AdminScreen.js` → Log |
-| App background: DDL blue or white | | Settings (⚙ in the General header), saved on the phone; colours in `src/theme.js` |
-| Spam brake | 6 posts per 6 seconds per player (`RATE_LIMIT`) | |
-
-Staff can't be moderated from the app, and only staff see the STAFF button.
-
-## Protocol (JSON over WebSocket)
-
-Client sends `{type, rid, ...}`; the server replies `{type:"ack", rid, data}` or
-`{type:"error", rid, code, message}` (the message is ready to show to the player).
-
-First message must be `{type:"auth", token}` (within 10 s). The server answers with `ready`:
-`{me, online, platforms, general, generalMore, friendlies, swap, help, dms}`, where general/friendlies/swap/help
-are objects keyed by platform (`{dartsmind: [...], scolia: [...]}`).
-
-| Request | Fields | Who |
-|---|---|---|
-| `history` | `room`, `before?` (message id) | room members |
-| `send` | `room`, `text`, `imageUrl?` | room members, not muted |
-| `delete` | `id` | author or staff |
-| `dm.open` | `userId`, `platform` | anyone |
-| `dm.list` | | anyone |
-| `users.search` | `q` | anyone |
-| `friendly.post` | `platform`, `format` FT3/FT5/Other, `custom?`, `game`, `note?` | anyone |
-| `friendly.accept` / `friendly.cancel` | `id` | others / owner or staff |
-| `swap.post` | `platform`, `kind`, `title`, `price?`, `cond`, `desc?`, `imageUrl?` | anyone |
-| `swap.done` / `swap.delete` | `id` | owner / owner or staff |
-| `help.ask` | `platform`, `text` (must be a question) | anyone |
-| `help.answer` / `help.private` | `id`, `text` | staff |
-| `help.status` | `id`, `status` open/solved/deleted | staff (owner may mark solved) |
-| `admin.members` | | staff |
-| `mod` | `action` mute/unmute/kick/unkick/ban/unban, `userId`, `minutes?` | staff |
-
-Pushed events: `message`, `deleted`, `friendlies`, `swap`, `help`, `presence`, `sanction` (you were
-muted/unmuted), `blocked` (kicked/banned, socket closes with code 4003), `auth_failed` (4001),
-`modlog` and `member` (staff only).
-
-## Before going live
-
-- Set a real `CHAT_SECRET` in both places; never commit it.
-- Put the socket behind TLS (`wss://`); the app will refuse plain `ws://` in release builds.
-- Make sure `UPLOAD_BASE_URL` is identical in `chat-config.php` and `server/.env`; the server
-  rejects picture URLs from anywhere else.
-- Add the extra words DDL wants blocked to `BAD` in `server/filter.js` (and copy to `app/src/filter.js`).
+The free Spark plan includes 50,000 reads and 20,000 writes per day: plenty for testing with a group.
+Every app start reads roughly 200–300 documents (recent messages, friendlies, listings), so with around a thousand
+active players a day the free reads run out and the chat stops until midnight (Pacific time). Before launch,
+switch to **Blaze** (pay per use, the free amounts stay free) and set a budget alert in Google Cloud.
+At that size, expect a few euros to about €20 a month, depending on how busy the chat is.

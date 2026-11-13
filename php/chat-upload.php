@@ -8,12 +8,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') chat_json(405, ['error' => 'Use POST.
 $me = chat_read_token(chat_bearer());
 if (!$me) chat_json(401, ['error' => 'Log in again.']);
 
-$s = chat_db()->prepare('SELECT muted_until, kicked_until, banned FROM chat_sanctions WHERE user_id = ?');
-$s->execute([(string)$me['uid']]);
-if ($row = $s->fetch()) {
-    $t = (int)round(microtime(true) * 1000);
-    if ($row['banned'] || $row['kicked_until'] > $t || $row['muted_until'] > $t) chat_json(403, ['error' => 'You cannot post pictures right now.']);
-}
+// Mutes and bans live in Firebase; a muted or banned player's message with the picture is refused there.
 
 $f = $_FILES['image'] ?? null;
 if (!$f || $f['error'] !== UPLOAD_ERR_OK) chat_json(400, ['error' => 'No picture received.']);

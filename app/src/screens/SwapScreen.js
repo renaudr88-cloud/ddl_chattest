@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { View, Text, ScrollView, TextInput, Image, TouchableOpacity } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { chat, useChat, isMuted, listHere } from '../chat';
+import { chat, useChat, isMuted, listHere, CAN_UPLOAD } from '../chat';
 import { hasBad } from '../filter';
 import { Avatar, Header, Btn, Chip, Pick, Segmented, Empty, Notice, Lightbox, ConfirmBtn, timeLabel, toast, showError, s as ui } from '../components';
 import { C } from '../theme';
@@ -55,7 +55,7 @@ export default function SwapScreen({ onUser }) {
           <Segmented options={[['New', 'New'], ['Like new', 'Like new'], ['Used', 'Used'], ['Any', 'Any']]} value={cond} onChange={setCond} />
           <TextInput style={[ui.input, { minHeight: 70, textAlignVertical: 'top' }]} multiline placeholder="Weight, grip, what's included, shipping or pick-up" placeholderTextColor={C.muted} value={desc} onChangeText={setDesc} maxLength={400} />
           <View style={ui.row}>
-            <Btn small title={img ? 'Change photo' : '📷 Add photo'} onPress={pick} />
+            {CAN_UPLOAD && <Btn small title={img ? 'Change photo' : '📷 Add photo'} onPress={pick} />}
             {img && <Image source={{ uri: img }} style={{ width: 44, height: 44, borderRadius: 6 }} />}
           </View>
           {muted && <Notice text="You are muted and cannot post right now." />}

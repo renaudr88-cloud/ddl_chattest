@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View, Text, FlatList, TextInput, TouchableOpacity, Image, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { chat, useChat, isMuted } from '../chat';
+import { chat, useChat, isMuted, CAN_UPLOAD } from '../chat';
 import { hasBad } from '../filter';
 import { Avatar, Header, Notice, RoleTag, Lightbox, Empty, timeLabel, clock, toast, showError } from '../components';
 import { C, R, themed, useTheme } from '../theme';
@@ -21,7 +21,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
   useEffect(() => {
     chat.activeRoom = room;
     if (!list && st.status === 'online') chat.loadRoom(room).catch(showError);
-    else if (list?.length) chat.markRead(room, list[list.length - 1].id);
+    else if (list?.length) chat.markRead(room, list[list.length - 1].ts);
     return () => { if (chat.activeRoom === room) chat.activeRoom = null; };
   }, [room, st.status]);
 
@@ -83,7 +83,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
           <Text style={{ color: C.muted, flex: 1 }}>Picture attached</Text>
           <TouchableOpacity onPress={() => setImg(null)}><Text style={{ color: C.orangeSoft, fontWeight: '700' }}>Remove</Text></TouchableOpacity></View>}
         <View style={styles.row}>
-          <TouchableOpacity style={styles.icon} onPress={pick} disabled={muted} accessibilityLabel="Add a picture"><Text style={{ fontSize: 20 }}>📷</Text></TouchableOpacity>
+          {CAN_UPLOAD && <TouchableOpacity style={styles.icon} onPress={pick} disabled={muted} accessibilityLabel="Add a picture"><Text style={{ fontSize: 20 }}>📷</Text></TouchableOpacity>}
           <TextInput style={styles.input} value={text} onChangeText={setText} multiline maxLength={1000} editable={!muted}
             placeholder={room.startsWith('general:') ? 'Message the community…' : 'Write a private message…'} placeholderTextColor={C.muted} />
           <TouchableOpacity style={[styles.send, (muted || sending) && { opacity: 0.45 }]} onPress={send} disabled={muted || sending}>

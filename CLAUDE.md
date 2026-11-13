@@ -1,23 +1,25 @@
 # DDL Chat — notes for Claude
 
 Community chat app for the Digital Darts League (ddl-online.com), replacing the WhatsApp community.
-Must handle ~1000 concurrent players and be very easy to use for all ages.
+Must handle ~1000 concurrent players and be very easy to use for all ages. Backend: Firebase (Firestore + Auth).
 
-- `server/` Node.js WebSocket server (`ws`, `mysql2`), entry `server.js`, storage in `db.js`
-  (`DB_DRIVER=mysql` or `memory`). Tests: `npm test` (in-memory, must stay green).
-  Test mode: `npm run dev` (`dev.js`: memory + DEV_MODE, own login `/dev-login` and upload `/dev-upload`, example data).
-- `php/` login + picture upload endpoints that run on the existing DDL PHP/MySQL site.
-  PHP signs an HMAC token with `CHAT_SECRET`; the Node server verifies it. PHP and Node never call each other.
-- `sql/schema.sql` new `chat_*` tables only; never alter existing DDL tables.
-- `app/` complete Expo project (SDK 58); `TEST_MODE` in `app/src/config.js` picks the test server or the live one; URLs in `app/src/config.js`, colours in `app/src/theme.js`,
-  platforms in `app/src/platforms.js`, login background in `app/assets/login-bg.jpg`.
+- `app/` complete Expo project (SDK 58, firebase JS SDK). Data layer: `app/src/chat.js` (Firestore listeners and
+  the actions the screens call via `chat.request(type, data)`). Firebase init: `app/src/firebase.js`,
+  project config: `app/src/firebaseConfig.js`. `TEST_MODE` in `app/src/config.js`: anonymous name login + staff code
+  (test) or DDL login via PHP (live). Colours `app/src/theme.js`, platforms `app/src/platforms.js`.
+- `firebase/firestore.rules` is the server: all permissions, moderation, bad-word check and data validation live there.
+  `firebase.json` deploys the rules and the web build (`app/dist`) to Firebase Hosting.
+- `php/` runs on the DDL site: `chat-login.php` checks the DDL users table and returns a Firebase custom token
+  (uid `ddl-<id>`, claims `ddlName`, `ddlRole`) plus an upload token; `chat-upload.php` stores pictures on the DDL site.
 - Platforms (Dartsmind, Scolia): each has its own General chat, Friendlies, Dartswap, Help and private chats.
-  Only the account and mute/kick/ban are shared. Server list: `PLATFORMS` in `server/.env`; must match the app.
-- Protocol and features: `README.md`. Deployment order and current status: `NEXT_STEPS.md`.
+  Only the account and mute/kick/ban are shared. Keep `app/src/platforms.js` and `platforms()` in the rules the same.
+- Setup, data model and costs: `README.md`. Status and order of work: `NEXT_STEPS.md`.
 
 Rules:
-- Never commit secrets (`CHAT_SECRET`, DB passwords, filled-in `chat-config.php`).
-- Keep the bad-word list in `server/filter.js` and `app/src/filter.js` identical.
-- Moderation is enforced server-side; the app only mirrors it.
+- Never commit secrets: the Firebase service account key, `CHAT_SECRET`, DB passwords, a filled-in `chat-config.php`.
+  (The web `firebaseConfig` is not secret.)
+- Keep the bad-word list in `app/src/filter.js` and `clean()` in `firebase/firestore.rules` in line.
+- Moderation and permissions are enforced by the Firestore rules; the app only mirrors them.
 - Keep friendlies simple: a "looking for a friendly" card others can see and accept.
-- Run `npm test` in `server/` after any server change.
+- Keep Firestore reads low (limits on every listener): the free plan has 50k reads a day.
+- The old Node/WebSocket version is on the `main` branch history; this branch replaces it.

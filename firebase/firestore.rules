@@ -1,0 +1,175 @@
+rules_version = '2';
+
+// DDL Chat - Firestore security rules.
+// These rules ARE the server: they decide who may read and write what. The app only mirrors them.
+//
+// Data
+//   users/{uid}                          name, nameLower, role, avatar, lastSeen
+//   rooms/{room}/messages/{id}           room = "general:<platform>" or "dm:<platform>:<uidA>:<uidB>" (uids sorted)
+//   dms/{room}                           one per private chat: members, users{uid:{name,role}}, lastAt, lastBy
+//   platforms/{p}/friendlies/{id}        "looking for a friendly" cards
+//   platforms/{p}/swap/{id}              Dartswap listings
+//   platforms/{p}/help/{id}              help desk questions (answers in an array)
+//   sanctions/{uid}                      mutedUntil, kickedUntil (timestamps), banned
+//   modlog/{id}                          staff actions
+//   staff/{uid}                          test mode only: staff who entered the staff code
+//   config/staff                         test mode only: { code: "..." } (set in the console, unreadable for the app)
+//
+// Staff (admin): a DDL login with ddlRole "admin" in the token (made by php/chat-login.php),
+// or, in test mode, someone who entered the staff code from config/staff.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+    function platforms() { return ['dartsmind', 'scolia']; }   // keep in sync with app/src/platforms.js
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function isAdmin() {
+      return signedIn() && (request.auth.token.get('ddlRole', '') == 'admin' || exists(/databases/$(database)/documents/staff/$(me())));
+    }
+    function myRole() { return isAdmin() ? 'admin' : 'player'; }
+    function myName() { return get(/databases/$(database)/documents/users/$(me())).data.name; }
+
+    function sanctionOf(uid) {
+      return exists(/databases/$(database)/documents/sanctions/$(uid)) ? get(/databases/$(database)/documents/sanctions/$(uid)).data : {};
+    }
+    function blocked() {
+      let s = sanctionOf(me());
+      return s.get('banned', false) == true || s.get('kickedUntil', timestamp.value(0)) > request.time;
+    }
+    function muted() { return sanctionOf(me()).get('mutedUntil', timestamp.value(0)) > request.time; }
+    function canRead() { return signedIn() && !blocked(); }
+    function canPost() { return canRead() && !muted(); }
+
+    // Bad words (English + Dutch). The app checks first and also catches "f.u.c.k" and "k4nker";
+    // these rules stop anyone who skips the app. Keep in line with app/src/filter.js.
+    function clean(t) {
+      let s = t.lower();
+      return !s.matches('(?s).*(fuck|cunt|motherfucker|nigger|faggot|klootzak|kanker|tering|godverdomme).*')
+        && !s.matches('(?s)(.*[^a-z])?(fck|fuk|shit|bitch|asshole|arsehole|bastard|dick|dickhead|wanker|twat|prick|slut|whore|retard|nigga|fag|kut|hoer|lul|gvd|mongool|eikel|sukkel|flikker|tyfus|pleuris|debiel|kech)(s|en|ing|ed|er|ers)?([^a-z].*)?');
+    }
+    function text(t, max) { return t is string && t.size() <= max && clean(t); }
+    function picture(u) {
+      // Only pictures uploaded through the DDL site (php/chat-upload.php). Change the address if the upload folder moves.
+      return u == null || (u is string && u.matches('https://ddl-online\\.com/uploads/chat/[A-Za-z0-9-]+\\.jpg'));
+    }
+    function inPlatforms(p) { return p in platforms(); }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+
+    // Room names: "general:<platform>" or "dm:<platform>:<uidA>:<uidB>" with uidA < uidB.
+    function roomOk(room) {
+      let p = room.split(':');
+      return (p.size() == 2 && p[0] == 'general' && inPlatforms(p[1]))
+        || (p.size() == 4 && p[0] == 'dm' && inPlatforms(p[1]) && p[2] < p[3] && (p[2] == me() || p[3] == me()));
+    }
+
+    // ---------- users ----------
+    match /users/{uid} {
+      allow read: if signedIn();
+      // A DDL login must use the name from its token; in test mode the player picks a name.
+      allow create, update: if signedIn() && uid == me()
+        && request.resource.data.keys().hasOnly(['name', 'nameLower', 'role', 'avatar', 'lastSeen'])
+        && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 30
+        && request.resource.data.name == request.auth.token.get('ddlName', request.resource.data.name)
+        && request.resource.data.nameLower == request.resource.data.name.lower()
+        && clean(request.resource.data.name)
+        && request.resource.data.role == myRole();
+    }
+
+    // ---------- messages ----------
+    match /rooms/{room}/messages/{id} {
+      allow read: if canRead() && roomOk(room);
+      allow create: if canPost() && roomOk(room)
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'role', 'text', 'imageUrl', 'ts'])
+        && request.resource.data.uid == me()
+        && request.resource.data.name == myName()
+        && request.resource.data.role == myRole()
+        && request.resource.data.ts == request.time
+        && text(request.resource.data.text, 1000)
+        && picture(request.resource.data.get('imageUrl', null))
+        && (request.resource.data.text.size() > 0 || request.resource.data.get('imageUrl', null) != null);
+      allow delete: if signedIn() && (resource.data.uid == me() || isAdmin());
+    }
+
+    // ---------- private chat list ----------
+    match /dms/{room} {
+      allow read: if canRead() && me() in resource.data.members;
+      allow create, update: if canPost() && roomOk(room) && room.split(':')[0] == 'dm'
+        && request.resource.data.members == [room.split(':')[2], room.split(':')[3]]
+        && request.resource.data.platform == room.split(':')[1]
+        && request.resource.data.lastBy == me()
+        && request.resource.data.lastAt == request.time;
+    }
+
+    // ---------- per platform: friendlies, Dartswap, help desk ----------
+    match /platforms/{p}/friendlies/{id} {
+      allow read: if canRead() && inPlatforms(p);
+      allow create: if canPost() && inPlatforms(p)
+        && request.resource.data.uid == me() && request.resource.data.name == myName()
+        && request.resource.data.status == 'open' && request.resource.data.ts == request.time
+        && request.resource.data.format in ['FT3', 'FT5', 'Other']
+        && request.resource.data.game in ['501', '301', '701', 'Cricket']
+        && text(request.resource.data.custom, 40) && text(request.resource.data.note, 120);
+      // Owner or staff takes it down; anyone else accepts an open card (only once).
+      allow update: if canRead() && (
+          ((resource.data.uid == me() || isAdmin()) && changed().hasOnly(['status']) && request.resource.data.status == 'cancelled')
+          || (canPost() && resource.data.uid != me() && resource.data.status == 'open'
+              && changed().hasOnly(['status', 'matchedWith', 'matchedName'])
+              && request.resource.data.status == 'matched'
+              && request.resource.data.matchedWith == me() && request.resource.data.matchedName == myName()));
+    }
+
+    match /platforms/{p}/swap/{id} {
+      allow read: if canRead() && inPlatforms(p);
+      allow create: if canPost() && inPlatforms(p)
+        && request.resource.data.uid == me() && request.resource.data.name == myName()
+        && request.resource.data.status == 'open' && request.resource.data.ts == request.time
+        && request.resource.data.kind in ['Sell', 'Swap', 'Wanted']
+        && text(request.resource.data.title, 70) && request.resource.data.title.size() > 0
+        && text(request.resource.data.desc, 400) && text(request.resource.data.cond, 20)
+        && request.resource.data.price is string && request.resource.data.price.matches('[0-9.,]{0,12}')
+        && picture(request.resource.data.get('imageUrl', null));
+      allow update: if canRead() && changed().hasOnly(['status']) && (
+          (resource.data.uid == me() && request.resource.data.status in ['done', 'deleted'])
+          || (isAdmin() && request.resource.data.status == 'deleted'));
+    }
+
+    match /platforms/{p}/help/{id} {
+      // Players see their own questions and the solved ones (a public FAQ). Staff see everything.
+      allow read: if canRead() && inPlatforms(p)
+        && (isAdmin() || resource.data.uid == me() || resource.data.status == 'solved');
+      allow create: if canPost() && inPlatforms(p)
+        && request.resource.data.uid == me() && request.resource.data.name == myName()
+        && request.resource.data.status == 'open' && request.resource.data.ts == request.time
+        && request.resource.data.answers == []
+        && text(request.resource.data.text, 300) && request.resource.data.text.size() >= 10;
+      allow update: if canRead() && (
+          isAdmin()
+          || (resource.data.uid == me() && changed().hasOnly(['status']) && request.resource.data.status == 'solved'));
+    }
+
+    // ---------- moderation ----------
+    match /sanctions/{uid} {
+      allow read: if signedIn() && (uid == me() || isAdmin());
+      // Staff cannot sanction other staff.
+      allow write: if isAdmin() && uid != me()
+        && (!exists(/databases/$(database)/documents/users/$(uid)) || get(/databases/$(database)/documents/users/$(uid)).data.role != 'admin');
+    }
+    match /modlog/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && request.resource.data.adminUid == me() && request.resource.data.ts == request.time;
+    }
+
+    // ---------- test mode staff ----------
+    match /staff/{uid} {
+      allow read: if signedIn() && uid == me();
+      allow create: if signedIn() && uid == me() && exists(/databases/$(database)/documents/config/staff)
+        && request.resource.data.keys().hasOnly(['code'])
+        && request.resource.data.code == get(/databases/$(database)/documents/config/staff).data.code;
+    }
+    match /config/{id} {
+      allow read, write: if false;   // set by hand in the Firebase console
+    }
+  }
+}

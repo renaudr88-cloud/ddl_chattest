@@ -30,10 +30,7 @@ if (!$u || !password_verify($password, $u['hash'])) {
     chat_json(401, ['error' => 'Username or password is wrong.']);
 }
 
-// Banned players can't get a token.
-$ban = chat_db()->prepare('SELECT banned FROM chat_sanctions WHERE user_id = ?');
-$ban->execute([(string)$u['id']]);
-if ((int)$ban->fetchColumn() === 1) chat_json(403, ['error' => 'This account is banned from the DDL chat.']);
+// Bans are kept in Firebase (sanctions/{uid}); the rules there block banned players.
 
 $isAdmin = in_array((int)$u['id'], ADMIN_IDS, true) || (COL_ROLE && in_array(strtolower((string)$u['role']), ADMIN_ROLES, true));
 $user = [
@@ -42,6 +39,18 @@ $user = [
     'role'   => $isAdmin ? 'admin' : 'player',
     'avatar' => $u['avatar'] ?? null,
 ];
-$token = chat_make_token($user + ['exp' => time() + CHAT_TOKEN_TTL]);
+$token = chat_make_token($user + ['exp' => time() + CHAT_TOKEN_TTL]);   // for picture uploads (chat-upload.php)
 
-chat_json(200, ['token' => $token, 'user' => ['id' => $user['uid'], 'name' => $user['name'], 'role' => $user['role'], 'avatar' => $user['avatar']]]);
+// Firebase sign-in for the chat itself. uid "ddl-<id>" is this player's id in Firebase.
+try {
+    $firebaseToken = firebase_custom_token('ddl-' . $user['uid'], ['ddlName' => $user['name'], 'ddlRole' => $user['role']]);
+} catch (Throwable $e) {
+    error_log('chat-login: ' . $e->getMessage());
+    chat_json(500, ['error' => 'The chat is not set up correctly yet. Try again later.']);
+}
+
+chat_json(200, [
+    'token' => $token,
+    'firebaseToken' => $firebaseToken,
+    'user' => ['id' => 'ddl-' . $user['uid'], 'name' => $user['name'], 'role' => $user['role'], 'avatar' => $user['avatar']],
+]);

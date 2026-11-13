@@ -71,7 +71,7 @@ export default function LoginScreen() {
       <TouchableOpacity style={[styles.button, busy && { opacity: 0.6 }]} onPress={handleLogin} disabled={busy}>
         {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Log In</Text>}
       </TouchableOpacity>
-      <Text style={styles.hint}>{TEST_MODE ? 'Test version: log in with your own name and any password.' : 'Use your ddl-online.com account. You can switch platform in the app.'}</Text>
+      <Text style={styles.hint}>{TEST_MODE ? 'Test version: log in with your own name. Staff: use the staff code as password.' : 'Use your ddl-online.com account. You can switch platform in the app.'}</Text>
     </KeyboardAvoidingView>
     </View>
   );
