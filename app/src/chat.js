@@ -23,6 +23,7 @@ const READ_KEY = 'ddl-chat-read';
 const PLATFORM_KEY = 'ddl-chat-platform';
 const PAGE = 40;                          // messages loaded per room (keeps Firestore reads low)
 const MIN = 60_000;
+const FRIENDLY_MINUTES = 15;              // friendlies disappear after this
 const P_KEYS = PLATFORMS.map(p => p.key);
 export const RAFFLE_PLATFORM = 'dartsmind';             // raffles only exist on Dartsmind
 const RAFFLE_ROOM = 'raffle:' + RAFFLE_PLATFORM;
@@ -186,9 +187,14 @@ class ChatClient {
       this.watchRoom('general:' + p, () => this.set({ status: 'online' }));
       this.watchRoom('tournament:' + p);
       this.sub('friendlies:' + p, onSnapshot(query(collection(db, 'platforms', p, 'friendlies'), orderBy('ts', 'desc'), limit(60)), s => {
-        const all = s.docs.map(d => this.outFriendly(d, p));
-        const list = [...all.filter(f => f.status === 'open'), ...all.filter(f => f.status === 'matched').slice(0, 10)];
-        this.set(st => ({ friendlies: { ...st.friendlies, [p]: list } }));
+        const now = Date.now();
+        const all = s.docs.map(d => this.outFriendly(d, p)).filter(f => f.status === 'open' || f.status === 'matched');
+        // Tidy up: my own cards that are past their 15 minutes are deleted for real.
+        for (const f of all) if (f.user.id === this.uid && f.expiresAt <= now && !this.cleaned?.has(f.id)) {
+          (this.cleaned ||= new Set()).add(f.id);
+          deleteDoc(doc(db, 'platforms', p, 'friendlies', f.id)).catch(() => {});
+        }
+        this.set(st => ({ friendlies: { ...st.friendlies, [p]: all.filter(f => f.expiresAt > now) } }));
       }, onErr));
       this.sub('swap:' + p, onSnapshot(query(collection(db, 'platforms', p, 'swap'), orderBy('ts', 'desc'), limit(60)), s => {
         const list = s.docs.map(d => this.outSwap(d, p)).filter(x => x.status !== 'deleted')
@@ -310,7 +316,8 @@ class ChatClient {
   outFriendly(d, p) {
     const x = d.data({ serverTimestamps: 'estimate' });
     return { id: d.id, platform: p, user: userOf(x), format: x.format, custom: x.custom || '', game: x.game, note: x.note || '',
-      status: x.status, matchedWith: x.matchedWith ? { id: x.matchedWith, name: x.matchedName || 'Player', role: 'player' } : null, ts: ms(x.ts) };
+      status: x.status, matchedWith: x.matchedWith ? { id: x.matchedWith, name: x.matchedName || 'Player', role: 'player' } : null, ts: ms(x.ts),
+      expiresAt: x.expiresAt ? ms(x.expiresAt) : ms(x.ts) + FRIENDLY_MINUTES * MIN };
   }
   outSwap(d, p) {
     const x = d.data({ serverTimestamps: 'estimate' });
@@ -425,22 +432,26 @@ class ChatClient {
       this.canPost(custom + ' ' + note);
       const batch = writeBatch(db);
       // One open friendly per player per platform.
-      for (const f of this.state.friendlies[platform] || []) if (f.user.id === this.uid && f.status === 'open') batch.update(doc(db, 'platforms', platform, 'friendlies', f.id), { status: 'cancelled' });
+      for (const f of this.state.friendlies[platform] || []) if (f.user.id === this.uid && f.status === 'open') batch.delete(doc(db, 'platforms', platform, 'friendlies', f.id));
       const ref = doc(collection(db, 'platforms', platform, 'friendlies'));
-      batch.set(ref, { ...this.mine(), format, custom, game: ['501', '301', '701', 'Cricket'].includes(game) ? game : '501', note, status: 'open', ts: serverTimestamp() });
+      batch.set(ref, { ...this.mine(), format, custom, game: ['501', '301', '701', 'Cricket'].includes(game) ? game : '501', note, status: 'open',
+        ts: serverTimestamp(), expiresAt: Timestamp.fromMillis(Date.now() + FRIENDLY_MINUTES * MIN) });
       await batch.commit();
       return { id: ref.id };
     },
-    async 'friendly.cancel'({ id }) {
-      await updateDoc(doc(db, 'platforms', this.platformOf('friendlies', id), 'friendlies', id), { status: 'cancelled' });
+    async 'friendly.delete'({ id }) {
+      const p = this.platformOf('friendlies', id);
+      const f = (this.state.friendlies[p] || []).find(x => x.id === id);
+      await deleteDoc(doc(db, 'platforms', p, 'friendlies', id));
+      if (f && f.user.id !== this.uid) await this.log('friendly_delete', f.user, `[${p}] ${f.format === 'Other' ? f.custom : f.format}`);
     },
     async 'friendly.accept'({ id }) {
       const p = this.platformOf('friendlies', id);
       const f = (this.state.friendlies[p] || []).find(x => x.id === id);
-      if (!f || f.status !== 'open') fail('gone', 'This friendly was already taken.');
+      if (!f || f.status !== 'open' || f.expiresAt <= Date.now()) fail('gone', 'This friendly is no longer available.');
       this.canPost();
       try { await updateDoc(doc(db, 'platforms', p, 'friendlies', id), { status: 'matched', matchedWith: this.uid, matchedName: this.name }); }
-      catch (e) { if (e?.code === 'permission-denied') fail('gone', 'This friendly was already taken.'); throw e; }
+      catch (e) { if (e?.code === 'permission-denied') fail('gone', 'This friendly is no longer available.'); throw e; }
       const r = await this.openDM(p, f.user);
       await this.postMessage(r.room, `🎯 I accepted your ${f.format === 'Other' ? f.custom : f.format} friendly (${f.game}). Ready when you are!`, null, f.user);
       return r;

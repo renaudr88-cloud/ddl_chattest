@@ -125,13 +125,19 @@ service cloud.firestore {
       allow create: if canPost() && inPlatforms(p)
         && request.resource.data.uid == me() && request.resource.data.name == myName()
         && request.resource.data.status == 'open' && request.resource.data.ts == request.time
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time
+        && request.resource.data.expiresAt <= request.time + duration.value(16, 'm')   // 15 minutes (+1 for phone clocks)
         && request.resource.data.format in ['FT3', 'FT5', 'Other']
         && request.resource.data.game in ['501', '301', '701', 'Cricket']
         && text(request.resource.data.custom, 40) && text(request.resource.data.note, 120);
-      // Owner or staff takes it down; anyone else accepts an open card (only once).
+      // The player who posted it, or staff, can delete it. Cards expire after 15 minutes (expiresAt).
+      allow delete: if signedIn() && (resource.data.uid == me() || isAdmin());
+      // Owner or staff takes it down; anyone else accepts an open card that has not expired (only once).
       allow update: if canRead() && (
           ((resource.data.uid == me() || isAdmin()) && changed().hasOnly(['status']) && request.resource.data.status == 'cancelled')
           || (canPost() && resource.data.uid != me() && resource.data.status == 'open'
+              && resource.data.get('expiresAt', request.time) > request.time
               && changed().hasOnly(['status', 'matchedWith', 'matchedName'])
               && request.resource.data.status == 'matched'
               && request.resource.data.matchedWith == me() && request.resource.data.matchedName == myName()));

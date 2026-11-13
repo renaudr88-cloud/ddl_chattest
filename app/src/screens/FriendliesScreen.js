@@ -1,5 +1,6 @@
 // "Looking for a friendly": one simple card per player (FT3 / FT5 / Other). Others tap Accept → private chat opens.
-import { useState } from 'react';
+// A card disappears 15 minutes after it was posted; the player who posted it can delete it any time.
+import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TextInput } from 'react-native';
 import { chat, useChat, isMuted, listHere } from '../chat';
 import { hasBad } from '../filter';
@@ -15,9 +16,11 @@ export default function FriendliesScreen({ onOpenDM, onUser }) {
   const [busy, setBusy] = useState(false);
   const muted = isMuted(st.me);
   const admin = st.me?.role === 'admin';
-  const friendlies = listHere(st, 'friendlies');
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t); }, []);
+  const friendlies = listHere(st, 'friendlies').filter(f => f.expiresAt > now);   // older than 15 minutes: gone
   const open = friendlies.filter(f => f.status === 'open');
-  const matched = friendlies.filter(f => f.status === 'matched');
+  const matched = friendlies.filter(f => f.status === 'matched').slice(0, 10);
   const mineOpen = open.find(f => f.user.id === st.me?.id);
 
   const post = async () => {
@@ -32,7 +35,7 @@ export default function FriendliesScreen({ onOpenDM, onUser }) {
     try { const r = await chat.request('friendly.accept', { id: f.id }); toast(`Friendly accepted. Chat with ${r.other.name} is open.`); onOpenDM(r.room, r.other); }
     catch (e) { showError(e); }
   };
-  const cancel = f => chat.request('friendly.cancel', { id: f.id }).catch(showError);
+  const remove = f => chat.request('friendly.delete', { id: f.id }).then(() => toast('Friendly deleted.')).catch(showError);
 
   const card = f => {
     const mine = f.user.id === st.me?.id;
@@ -42,15 +45,16 @@ export default function FriendliesScreen({ onOpenDM, onUser }) {
           <Text style={{ color: C.orangeSoft, fontSize: 34, fontWeight: '900' }}>{f.format === 'Other' ? f.custom : f.format}</Text>
           <Chip solid label={f.status === 'open' ? 'Open' : 'Matched'} color={f.status === 'open' ? C.ok : C.navy2} />
         </View>
-        <View style={ui.row}><Chip label={f.game} />{f.matchedWith && <Chip label={'vs ' + f.matchedWith.name} />}</View>
+        <View style={ui.row}><Chip label={f.game} />{f.matchedWith && <Chip label={'vs ' + f.matchedWith.name} />}
+          {f.status === 'open' && <Chip label={`⏱ ${Math.max(1, Math.ceil((f.expiresAt - now) / 60_000))} min left`} />}</View>
         {!!f.note && <Text style={{ color: C.muted }}>{f.note}</Text>}
         <View style={ui.row}><Avatar user={f.user} onPress={() => onUser(f.user)} />
           <View><Text style={{ color: C.fg, fontWeight: '700' }}>{f.user.name}</Text><Text style={{ color: C.muted, fontSize: 12 }}>{timeLabel(f.ts)}</Text></View></View>
         {f.status === 'open' && <View style={ui.row}>
-          {mine ? <Btn small title="Stop looking" onPress={() => cancel(f)} /> : <>
+          {mine ? <Btn small kind="danger" title="Delete" onPress={() => remove(f)} /> : <>
             <Btn small kind="pri" title="Accept" disabled={muted} onPress={() => accept(f)} />
             <Btn small title="Message" onPress={() => onUser(f.user, true)} /></>}
-          {admin && !mine && <Btn small kind="danger" title="Remove" onPress={() => cancel(f)} />}
+          {admin && !mine && <Btn small kind="danger" title="Remove" onPress={() => remove(f)} />}
         </View>}
       </View>);
   };
@@ -67,6 +71,7 @@ export default function FriendliesScreen({ onOpenDM, onUser }) {
           <TextInput style={ui.input} placeholder="Note (optional): platform, time…" placeholderTextColor={C.muted} value={note} onChangeText={setNote} maxLength={120} />
           {muted && <Notice text="You are muted and cannot post right now." />}
           <Btn kind="pri" title={mineOpen ? 'Update' : "I'm looking for a friendly"} loading={busy} disabled={muted} onPress={post} />
+          <Text style={{ color: C.muted, fontSize: 12, textAlign: 'center' }}>Your card disappears after 15 minutes. Post again to stay in the list.</Text>
         </View>
         {open.length ? open.map(card) : <Empty text="Nobody is looking right now. Be the first." />}
         {!!matched.length && <Text style={ui.section}>Recently matched</Text>}
