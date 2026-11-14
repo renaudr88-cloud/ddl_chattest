@@ -117,7 +117,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
       <Header title={title} subtitle={subtitle} onBack={onBack} right={right} />
       {below}
       {st.status !== 'online' && <Text style={styles.conn}>{st.status === 'connecting' ? 'Connecting…' : 'Offline. Reconnecting…'}</Text>}
-      {!list ? <ActivityIndicator color={C.orange} style={{ marginTop: 40 }} /> :
+      {!list ? <View style={{ flex: 1 }}><ActivityIndicator color={C.orange} style={{ marginTop: 40 }} /></View> :
         <FlatList
           data={data} extraData={theme} inverted keyExtractor={m => String(m.id)} renderItem={renderItem}
           contentContainerStyle={{ padding: 14 }}

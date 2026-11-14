@@ -6,7 +6,8 @@ Help desk, separately for Dartsmind and Scolia, with a bad-word filter and staff
 ```
 app/        Expo (React Native) app, also runs in the browser
 firebase/   firestore.rules: who may read and write what (this is the "server")
-php/        chat-login.php (DDL account -> Firebase sign-in), chat-upload.php (pictures), chat-config.php
+php/        chat-login.php (DDL account -> Firebase sign-in), chat-player.php, chat-matches.php,
+            chat-notifications.php (read the DDL site for the chat), chat-config.php
 firebase.json   rules + web hosting for `firebase deploy`
 ```
 
@@ -75,6 +76,18 @@ It uses the site's own `db.php`, so no database password goes into the chat file
    to the website folder, next to `index.php` and `db.php`. (`chat-upload.php` is no longer needed.)
 4. Check: `https://ddl-online.com/chat-login.php` in a browser must say `{"error":"Use POST."}`.
 5. Set `TEST_MODE = false` in `app/src/config.js`, build and deploy (`npm run build:web`, `firebase deploy`).
+
+## Links with the DDL website (read only, the website itself is not changed)
+
+The app calls these files next to `chat-login.php`, with the token `chat-login.php` gave (header `Authorization: Bearer`):
+
+| File | What |
+|---|---|
+| `chat-player.php?id=12` | a player's name, photo and Dartsmind name (private chat with someone who never opened the chat) |
+| `chat-matches.php` | my open matches in running tournaments: "Your match: vs ..." in the Dartsmind Tournament chat |
+| `chat-notifications.php` | the website's notifications (table `notifications`) under Messages → DDL notifications; POST marks them read |
+
+A link `https://ddl-chat-858ec.web.app/?dm=12` opens a private chat with player 12.
 
 ## Data (Firestore)
 

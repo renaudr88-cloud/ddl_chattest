@@ -4,9 +4,7 @@
 // Same check as the website's login.php: players.email + password_verify, blocked statuses refused.
 // The app signs in to Firebase with firebaseToken and keeps token for picture uploads (chat-upload.php).
 require __DIR__ . '/chat-config.php';
-header('Access-Control-Allow-Origin: *');            // the app's web version runs on Firebase Hosting
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
+chat_cors();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') chat_json(405, ['error' => 'Use POST.']);
 
@@ -49,15 +47,6 @@ try {
 } catch (Throwable $e) {
     error_log('chat-login: ' . $e->getMessage());
     chat_json(500, ['error' => 'The chat is not set up correctly yet. Try again later.']);
-}
-
-// Profile photo from the website (players.photo, e.g. "images/player-photos/player_12_ab12.jpg",
-// set by upload-player-photo.php) as a full web address, or null when the player has none.
-function chat_photo_url(string $path): ?string {
-    $path = trim($path);
-    if ($path === '' || !preg_match('~^[A-Za-z0-9_./-]+\.(jpe?g|png|gif|webp)$~i', $path) || str_contains($path, '..')) return null;
-    $site = defined('CHAT_SITE_URL') ? CHAT_SITE_URL : 'https://ddl-online.com';
-    return rtrim($site, '/') . '/' . ltrim($path, '/');
 }
 
 chat_json(200, [

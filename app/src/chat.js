@@ -39,6 +39,7 @@ const initial = {
   read: {},                // room -> time (ms) of the last message seen
   friendlies: {}, swap: {}, help: {}, // per platform: { dartsmind: [...], scolia: [...] }
   members: [], log: [],
+  notices: [], noticesUnread: 0,   // the website's notifications (ddl-online.com, php/chat-notifications.php)
   raffle: { status: null, requests: [] }, // my raffle access (null|pending|approved|declined|removed); staff: all requests
   blocked: null,           // {reason:'banned'|'kicked', until}
 };
@@ -133,7 +134,7 @@ class ChatClient {
     this.stopAll();
     try { await signOut(auth); } catch {}
     await AsyncStorage.removeItem(TOKEN_KEY).catch(() => {});
-    this.older = {}; this.cursor = {}; this.live = {};
+    this.older = {}; this.cursor = {}; this.live = {}; this.noticesAt = 0; this.players = null;
     this.set({ ...initial, status: 'idle', platform: this.state.platform, read: this.state.read });
   }
 
@@ -164,9 +165,40 @@ class ChatClient {
   }
   heartbeat() {
     this.saveProfile().catch(() => {});
+    if (Date.now() - (this.noticesAt || 0) > 4 * MIN) this.loadNotices();
     const since = Timestamp.fromMillis(Date.now() - 5 * MIN);
     getCountFromServer(query(collection(db, 'users'), where('lastSeen', '>', since)))
       .then(c => this.set({ online: c.data().count })).catch(() => {});
+  }
+
+  /* ---------- the DDL website (php/chat-*.php next to chat-login.php) ---------- */
+  async site(file, { method = 'GET', body } = {}) {
+    if (TEST_MODE) fail('test_mode', 'Only with a DDL account.');
+    const token = await AsyncStorage.getItem(TOKEN_KEY);
+    if (!token) fail('login', 'Log out and log in again to use this.');
+    let res, data;
+    try {
+      res = await fetch(LOGIN_URL.replace('chat-login.php', file), {
+        method, headers: { Authorization: 'Bearer ' + token, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      data = await res.json();
+    } catch { fail('offline', 'No connection to the DDL website. Try again.'); }
+    if (res.status === 401) fail('login', 'Log out and log in again to use this.');
+    if (!res.ok) fail('site', data?.error || 'Something went wrong. Try again.');
+    return data;
+  }
+  async loadNotices() {
+    if (TEST_MODE) return;
+    this.noticesAt = Date.now();
+    try { const r = await this.site('chat-notifications.php'); this.set({ notices: r.list || [], noticesUnread: r.unread || 0 }); } catch {}
+  }
+  // A player from the website, also when they never opened the chat: name, photo and Dartsmind name.
+  async player(id) {
+    this.players ||= new Map();
+    if (!this.players.has(id)) this.players.set(id, this.site('chat-player.php?id=' + encodeURIComponent(String(id).replace(/^ddl-/, ''))).then(r => r.user)
+      .catch(e => { this.players.delete(id); throw e; }));
+    return this.players.get(id);
   }
 
   // (Re)start all live listeners. Called after login and by "Try again".
@@ -413,8 +445,22 @@ class ChatClient {
     async 'dm.open'({ userId, platform }) {
       if (!userId || userId === this.uid) fail('not_found', 'Player not found.');
       const snap = await getDoc(doc(db, 'users', userId));
+      if (!snap.exists() && !TEST_MODE && userId.startsWith('ddl-')) return this.openDM(platform || this.state.platform, await this.player(userId));
       if (!snap.exists()) fail('not_found', 'Player not found.');
       return this.openDM(platform || this.state.platform, userOf({ uid: userId, ...snap.data() }));
+    },
+    // From the brackets on the website: ?dm=<player id> opens a private chat with that player.
+    async 'dm.player'({ id, platform }) {
+      const u = await this.player(id);
+      if (u.id === this.uid) fail('not_found', 'That is you.');
+      return this.openDM(platform || this.state.platform, u);
+    },
+    async 'matches.mine'() { const r = await this.site('chat-matches.php'); return { list: r.list || [] }; },
+    async 'player.get'({ id }) { return { user: await this.player(id) }; },
+    async 'notices.read'() {
+      if (!this.state.noticesUnread) return;
+      this.set(st => ({ noticesUnread: 0, notices: st.notices.map(n => ({ ...n, read: true })) }));
+      await this.site('chat-notifications.php', { method: 'POST', body: { read: true } });
     },
     async 'dm.list'() { return { list: this.state.dms }; },
     async 'users.search'({ q }) {

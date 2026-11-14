@@ -31,6 +31,22 @@ function chat_db(): PDO {
     return $pdo;
 }
 
+// The app's web version runs on Firebase Hosting, so the chat-*.php files allow calls from other sites.
+function chat_cors(): void {
+    header('Access-Control-Allow-Origin: *');
+    header('Access-Control-Allow-Headers: Content-Type, Authorization');
+    header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
+}
+
+// Profile photo from the website (players.photo, e.g. "images/player-photos/player_12_ab12.jpg",
+// set by upload-player-photo.php) as a full web address, or null when the player has none.
+function chat_photo_url(string $path): ?string {
+    $path = trim($path);
+    if ($path === '' || !preg_match('~^[A-Za-z0-9_./-]+\.(jpe?g|png|gif|webp)$~i', $path) || str_contains($path, '..')) return null;
+    return rtrim(CHAT_SITE_URL, '/') . '/' . ltrim($path, '/');
+}
+
 function chat_json(int $status, array $data): void {
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');

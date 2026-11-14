@@ -1,9 +1,10 @@
 // Main shell: bottom tabs + private chat overlay + member sheet. No navigation library needed.
-import { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, Modal, Pressable } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Image, Modal, Pressable, Linking, Platform } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { chat, useChat, listHere, RAFFLE_PLATFORM, mentionCount } from '../chat';
 import { PLATFORMS, platformInfo } from '../platforms';
-import { Btn, Header, clock, showError, PlatformLogo, RoomPicker } from '../components';
+import { Btn, Header, clock, showError, toast, PlatformLogo, RoomPicker } from '../components';
 import { RaffleGate, RaffleStaffBar } from './Raffle';
 import { C, themed, useTheme, setTheme, THEMES, PALETTES } from '../theme';
 import ChatScreen from './ChatScreen';
@@ -31,6 +32,22 @@ export default function HomeScreen() {
   const [sheet, setSheet] = useState(null);    // user
   const [settings, setSettings] = useState(false);
   const theme = useTheme();
+
+  // Opened from the brackets on ddl-online.com: ...web.app/?dm=<player id>  → private chat with that player.
+  useEffect(() => {
+    const go = url => {
+      const m = /[?&]dm=(\d+)/.exec(url || '');
+      if (!m) return;
+      const p = /[?&]p=([a-z]+)/.exec(url)?.[1];
+      if (Platform.OS === 'web') { try { window.history.replaceState(null, '', window.location.pathname); } catch {} }
+      if (p && PLATFORMS.some(x => x.key === p)) chat.setPlatform(p);
+      chat.requestHere('dm.player', { id: m[1], ...(p ? { platform: p } : {}) })
+        .then(r => { setSheet(null); setAdmin(false); setDm(r); }).catch(showError);
+    };
+    Linking.getInitialURL().then(go).catch(() => {});
+    const sub = Linking.addEventListener('url', e => go(e.url));
+    return () => sub.remove();
+  }, []);
 
   if (st.blocked) {
     const banned = st.blocked.reason === 'banned';
@@ -70,7 +87,8 @@ export default function HomeScreen() {
   );
 
   let body;
-  if (dm) body = <ChatScreen room={dm.room} title={dm.other.name} subtitle={`Private chat · ${platformInfo(dm.room.split(':')[1]).name}${dm.other.role === 'admin' ? ' · DDL staff' : ''}`} onBack={() => { setDm(null); setTab('messages'); }} onUser={onUser} />;
+  if (dm) body = <ChatScreen room={dm.room} title={dm.other.name} subtitle={`Private chat · ${platformInfo(dm.room.split(':')[1]).name}${dm.other.role === 'admin' ? ' · DDL staff' : ''}`} onBack={() => { setDm(null); setTab('messages'); }} onUser={onUser}
+    below={dm.room.split(':')[1] === 'dartsmind' && <DartsmindBar other={dm.other} />} />;
   else if (admin) body = <AdminScreen onBack={() => setAdmin(false)} onUser={setSheet} />;
   else if (tab === 'chat') {
     const hasRaffle = st.platform === RAFFLE_PLATFORM;
@@ -89,7 +107,8 @@ export default function HomeScreen() {
       body = <RaffleGate header={<><Header title={info[0]} subtitle={info[1]} right={headerRight} />{picker}</>} />;
     } else {
       body = <ChatScreen key={r + st.platform} room={`${r}:${st.platform}`} title={info[0]} subtitle={info[1]} onUser={onUser} right={headerRight}
-        below={<>{picker}{r === 'raffle' && isAdmin && <RaffleStaffBar />}</>} />;
+        below={<>{picker}{r === 'raffle' && isAdmin && <RaffleStaffBar />}
+          {r === 'tournament' && st.platform === 'dartsmind' && <MyMatches onOpen={openDM} />}</>} />;
     }
   }
   else if (tab === 'messages') body = <MessagesScreen onOpen={openDM} />;
@@ -118,7 +137,7 @@ export default function HomeScreen() {
       {!dm && !admin && (
         <View style={styles.tabs}>
           {TABS.map(([k, ic, label]) => {
-            const badge = k === 'messages' ? unreadDMs : k === 'help' && isAdmin ? openHelp
+            const badge = k === 'messages' ? unreadDMs + (st.noticesUnread || 0) : k === 'help' && isAdmin ? openHelp
               : k === 'chat' ? (isAdmin ? (st.raffle?.requests || []).filter(x => x.status === 'pending').length : 0)
                 + ['general', 'tournament', 'raffle'].reduce((n, r) => n + mentionCount(st, `${r}:${st.platform}`), 0) : 0;
             const on = tab === k;
@@ -133,6 +152,55 @@ export default function HomeScreen() {
       )}
       {sheet && <MemberSheet user={sheet} onClose={() => setSheet(null)} onChat={chatWith} />}
       <Settings visible={settings} theme={theme} me={st.me} onClose={() => setSettings(false)} onModeration={() => { setSettings(false); setAdmin(true); }} />
+    </View>
+  );
+}
+
+// Tournament chat: "Your match: vs ..." for every open match of mine in the brackets on ddl-online.com,
+// with a button straight to a private chat (where the Dartsmind name is ready to copy).
+function MyMatches({ onOpen }) {
+  const st = useChat();
+  const [list, setList] = useState([]);
+  useEffect(() => {
+    if (!st.me?.id?.startsWith('ddl-')) return;
+    const load = () => chat.request('matches.mine').then(r => setList(r.list)).catch(() => {});
+    load();
+    const t = setInterval(load, 2 * 60_000);
+    return () => clearInterval(t);
+  }, [st.me?.id]);
+  const open = async m => {
+    try { const r = await chat.request('dm.player', { id: m.opponent.id, platform: 'dartsmind' }); onOpen(r.room, { ...r.other, ...m.opponent }); }
+    catch (e) { showError(e); }
+  };
+  return list.map(m => (
+    <View key={m.match} style={styles.match}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.matchSub} numberOfLines={1}>🏆 {m.tournament}{m.round ? ` · Round ${m.round}` : ''}</Text>
+        <Text style={styles.matchTxt} numberOfLines={1}>Your match: vs <Text style={{ fontWeight: '900' }}>{m.opponent.name}</Text></Text>
+      </View>
+      <TouchableOpacity onPress={() => open(m)} style={styles.copyBtn} accessibilityRole="button" accessibilityLabel={'Message ' + m.opponent.name}>
+        <Text style={styles.copyTxt}>Message</Text>
+      </TouchableOpacity>
+    </View>));
+}
+
+// Private chat on Dartsmind: the other player's Dartsmind name, ready to copy (to invite them in Dartsmind).
+function DartsmindBar({ other }) {
+  const [name, setName] = useState(other.dartsmind);
+  useEffect(() => {
+    if (name !== undefined || !String(other.id).startsWith('ddl-')) return;
+    chat.request('player.get', { id: other.id }).then(r => setName(r.user.dartsmind || null)).catch(() => setName(null));
+  }, [other.id]);
+  if (!name) return null;
+  const copy = async () => {
+    try { await Clipboard.setStringAsync(name); toast(`Copied: ${name}`); } catch { toast('Could not copy. Name: ' + name, true); }
+  };
+  return (
+    <View style={styles.dmBar}>
+      <Text style={styles.dmBarTxt} numberOfLines={1}>🎯 Dartsmind: <Text style={{ fontWeight: '900' }}>{name}</Text></Text>
+      <TouchableOpacity onPress={copy} style={styles.copyBtn} accessibilityRole="button" accessibilityLabel={'Copy Dartsmind name ' + name}>
+        <Text style={styles.copyTxt}>Copy</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -174,6 +242,13 @@ function Settings({ visible, theme, me, onClose, onModeration }) {
 }
 
 const styles = themed(C => ({
+  match: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: C.orange + '22', borderBottomWidth: 1, borderBottomColor: C.orange },
+  matchSub: { color: C.muted, fontSize: 12 },
+  matchTxt: { color: C.fg, fontSize: 15 },
+  dmBar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: C.navy2 },
+  dmBarTxt: { color: C.white, fontSize: 14, flex: 1 },
+  copyBtn: { backgroundColor: C.orange, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 6 },
+  copyTxt: { color: C.white, fontWeight: '900', fontSize: 13 },
   platBar: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, backgroundColor: C.navy },
   plat: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 8, borderRadius: 10, borderWidth: 2, borderColor: 'rgba(255,255,255,0.12)' },
   platOn: { borderColor: C.orange, backgroundColor: C.navy2 },

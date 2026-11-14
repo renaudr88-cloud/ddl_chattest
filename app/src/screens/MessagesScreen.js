@@ -1,15 +1,16 @@
 // Private chats list + start a new one.
 import { useEffect, useState } from 'react';
-import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, TextInput, Image, Linking } from 'react-native';
 import { chat, useChat } from '../chat';
 import { Avatar, Header, Empty, RoleTag, Btn, timeLabel, s as ui, showError } from '../components';
-import { C, themed } from '../theme';
+import { C, R, themed } from '../theme';
 
 export default function MessagesScreen({ onOpen }) {
   const st = useChat();
   const [searching, setSearching] = useState(false);
   const [q, setQ] = useState('');
   const [results, setResults] = useState([]);
+  const [notices, setNotices] = useState(false);
 
   useEffect(() => {
     if (!searching) return;
@@ -21,6 +22,9 @@ export default function MessagesScreen({ onOpen }) {
     try { const r = await chat.requestHere('dm.open', { userId: u.id }); setSearching(false); setQ(''); onOpen(r.room, r.other); }
     catch (e) { showError(e); }
   };
+
+  if (notices) return <Notices onBack={() => setNotices(false)} />;
+  const showNotices = st.me?.id?.startsWith('ddl-');   // only for DDL accounts
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -40,6 +44,15 @@ export default function MessagesScreen({ onOpen }) {
         </View>
       ) : (
         <FlatList data={st.dms.filter(d => d.platform === st.platform)} keyExtractor={d => d.room}
+          ListHeaderComponent={showNotices && (
+            <TouchableOpacity style={styles.row} onPress={() => setNotices(true)} accessibilityLabel="DDL notifications">
+              <Image source={require('../../assets/ddl-logo.png')} style={{ width: 44, height: 44, borderRadius: 22 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.name, st.noticesUnread > 0 && { fontWeight: '800' }]}>DDL notifications</Text>
+                <Text style={styles.sub} numberOfLines={1}>{st.notices[0]?.title || 'Messages from ddl-online.com'}</Text>
+              </View>
+              {st.noticesUnread > 0 && <View style={styles.badge}><Text style={styles.badgeTxt}>{st.noticesUnread}</Text></View>}
+            </TouchableOpacity>)}
           ListEmptyComponent={<Empty text="No private chats yet. Tap + New, or tap a player's name in General." />}
           renderItem={({ item: d }) => {
             const unread = chat.unread(d);
@@ -60,7 +73,34 @@ export default function MessagesScreen({ onOpen }) {
   );
 }
 
+// The website's notifications (same as ddl-online.com/notifications.php). Opening them marks them as read.
+function Notices({ onBack }) {
+  const st = useChat();
+  useEffect(() => { chat.loadNotices().then(() => chat.request('notices.read')).catch(() => {}); }, []);
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <Header title="DDL notifications" subtitle="From ddl-online.com" onBack={onBack} />
+      <FlatList data={st.notices} keyExtractor={n => String(n.id)} contentContainerStyle={{ padding: 14, gap: 10 }}
+        ListEmptyComponent={<Empty text="You're all caught up: no notifications." />}
+        renderItem={({ item: n }) => (
+          <View style={[styles.notice, !n.read && styles.noticeNew]}>
+            <Text style={styles.noticeTitle}>{n.title}</Text>
+            <Text style={styles.noticeBody}>{links(n.body)}</Text>
+            <Text style={styles.sub}>{timeLabel(n.ts)}</Text>
+          </View>)} />
+    </View>
+  );
+}
+// Web addresses in a notification can be tapped.
+const links = text => String(text).split(/(https?:\/\/[^\s]+)/).map((p, i) => /^https?:\/\//.test(p)
+  ? <Text key={i} style={styles.link} onPress={() => Linking.openURL(p)}>{p}</Text> : p);
+
 const styles = themed(C => ({
+  notice: { backgroundColor: C.panel, borderRadius: R.md, borderLeftWidth: 4, borderLeftColor: C.orange, padding: 12, gap: 4 },
+  noticeNew: { borderWidth: 1, borderColor: C.orange },
+  noticeTitle: { color: C.fg, fontSize: 15, fontWeight: '800' },
+  noticeBody: { color: C.fg, fontSize: 14, lineHeight: 20 },
+  link: { color: C.orangeSoft, fontWeight: '700', textDecorationLine: 'underline' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.line },
   name: { color: C.fg, fontSize: 16, fontWeight: '600' },
   sub: { color: C.muted, fontSize: 12, marginTop: 2 },
