@@ -12,6 +12,16 @@ export default function MessagesScreen({ onOpen }) {
   const [q, setQ] = useState('');
 
   const [notices, setNotices] = useState(false);
+  const dms = visibleDms(st).filter(d => d.platform === st.platform);
+  const ids = dms.slice(0, 30).map(d => d.other?.id).filter(Boolean).join(',');
+  const [online, setOnline] = useState({});
+  useEffect(() => {   // green dots: who is online now (checked every 3 minutes, max 30 players)
+    if (!ids) return;
+    let on = true;
+    const look = () => chat.presence(ids.split(',')).then(r => on && setOnline(r)).catch(() => {});
+    look(); const t = setInterval(look, 3 * 60 * 1000);
+    return () => { on = false; clearInterval(t); };
+  }, [ids]);
 
   const { found: results, status: searchStatus } = usePlayerSearch(q, searching);
 
@@ -47,7 +57,7 @@ export default function MessagesScreen({ onOpen }) {
               </TouchableOpacity>)} />
         </View>
       ) : (
-        <FlatList data={visibleDms(st).filter(d => d.platform === st.platform)} keyExtractor={d => d.room}
+        <FlatList data={dms} keyExtractor={d => d.room}
           ListHeaderComponent={showNotices && (
             <TouchableOpacity style={styles.row} onPress={() => setNotices(true)} accessibilityLabel="DDL notifications">
               <Image source={require('../../assets/ddl-logo.png')} style={{ width: 44, height: 44, borderRadius: 22 }} />
@@ -62,7 +72,7 @@ export default function MessagesScreen({ onOpen }) {
             const unread = chat.unread(d);
             return (
               <TouchableOpacity style={styles.row} onPress={() => onOpen(d.room, d.other)}>
-                <Avatar user={d.other} size={44} />
+                <Avatar user={d.other} size={44} online={online[d.other?.id]} />
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Text style={[styles.name, unread && { fontWeight: '800' }]}>{d.other.name}</Text><RoleTag user={d.other} />

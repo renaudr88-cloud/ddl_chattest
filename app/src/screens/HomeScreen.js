@@ -48,6 +48,17 @@ export default function HomeScreen() {
   // → private chat with that player.
   useEffect(() => {
     const go = url => {
+      // From a notification about an @tag: ?room=general:dartsmind → that chat.
+      const r = /[?&]room=([^&#]+)/.exec(url || '');
+      if (r) {
+        let room = ''; try { room = decodeURIComponent(r[1]); } catch {}
+        const [kind, plat] = room.split(':');
+        if (Platform.OS === 'web') { try { window.history.replaceState(null, '', window.location.pathname); } catch {} }
+        if (PLATFORMS.some(x => x.key === plat) && ['general', 'tournament', 'premier', 'raffle'].includes(kind)) {
+          chat.setPlatform(plat); setDm(null); setAdmin(false); setTab('chat'); setRoom(kind);
+        }
+        return;
+      }
       const m = /[?&]dm=(\d+)/.exec(url || '');
       const n = /[?&]dmn=([^&#]+)/.exec(url || '');
       if (!m && !n) return;

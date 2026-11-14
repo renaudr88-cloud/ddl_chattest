@@ -17,6 +17,7 @@ rules_version = '2';
 //   staff/{uid}                          chat staff: made by a DDL admin {name, by, ts} (or test staff code)
 //   blocks/{uid}                         players this player blocked: { users: { <uid>: <name> } } (only they can read it)
 //   prefs/{uid}                          my settings: { hiddenDms: { <room>: <time> } } private chats I deleted (only me)
+//   pins/{room}                          the pinned message of a group chat (staff): text, name, messageId, by, ts
 //   reports/{id}                         a player reports a player or message to staff: by, targetId, reason, status open|handled|dismissed
 //   config/staff                         test mode only: { code: "..." } (set in the console, unreadable for the app)
 //
@@ -58,6 +59,14 @@ service cloud.firestore {
         && !s.matches('(?s)(.*[^a-z])?(fck|fuk|shit|bitch|asshole|arsehole|bastard|dickhead|wanker|twat|prick|slut|whore|retard|nigga|fag|kut|hoer|lul|gvd|mongool|eikel|sukkel|flikker|tyfus|pleuris|debiel|kech)(s|en|ing|ed|er|ers)?([^a-z].*)?');
     }
     function text(t, max) { return t is string && t.size() <= max && clean(t); }
+    function pollOk(p) {
+      return p is map && p.keys().hasOnly(['q', 'options']) && text(p.q, 120) && p.q.size() > 0
+        && p.options is list && p.options.size() >= 2 && p.options.size() <= 6
+        && answer(p.options[0]) && answer(p.options[1])
+        && (p.options.size() < 3 || answer(p.options[2])) && (p.options.size() < 4 || answer(p.options[3]))
+        && (p.options.size() < 5 || answer(p.options[4])) && (p.options.size() < 6 || answer(p.options[5]));
+    }
+    function answer(o) { return text(o, 50) && o.size() > 0; }
     function picture(u) {
       // Pictures are shrunk by the app and stored in the document itself (JPEG, max ~400 KB).
       return u == null || (u is string && u.size() < 400000 && u.matches('data:image/jpeg;base64,[A-Za-z0-9+/=]+'));
@@ -120,7 +129,9 @@ service cloud.firestore {
     match /rooms/{room}/messages/{id} {
       allow read: if canRead() && roomOk(room) && roomAccess(room);
       allow create: if canPost() && roomOk(room) && roomAccess(room) && !blockedByOther(room)
-        && request.resource.data.keys().hasOnly(['uid', 'name', 'role', 'avatar', 'text', 'imageUrl', 'mentions', 'tournament', 'reply', 'ts'])
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'role', 'avatar', 'text', 'imageUrl', 'mentions', 'tournament', 'reply', 'poll', 'ts'])
+        // A poll (group chats only): a question and 2 to 6 answers. Votes come later, one per player.
+        && (!('poll' in request.resource.data) || (room.split(':')[0] != 'dm' && pollOk(request.resource.data.poll)))
         // Reply to another message: a short quote of it.
         && (!('reply' in request.resource.data) || (request.resource.data.reply is map
             && request.resource.data.reply.keys().hasOnly(['id', 'name', 'text'])
@@ -140,12 +151,31 @@ service cloud.firestore {
         && picture(request.resource.data.get('imageUrl', null))
         && (request.resource.data.text.size() > 0 || request.resource.data.get('imageUrl', null) != null);
       // Reactions: one emoji per player per message (reactions.<uid>), only your own.
-      allow update: if canPost() && roomOk(room) && roomAccess(room)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
-        && request.resource.data.reactions is map && request.resource.data.reactions.size() <= 500
-        && request.resource.data.reactions.diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([me()])
-        && (!(me() in request.resource.data.reactions) || request.resource.data.reactions[me()] in ['👍', '🎯', '🔥', '😂', '👏', '💯']);
+      // Poll votes: votes.<uid> = number of the answer, only your own (or taken back).
+      allow update: if canPost() && roomOk(room) && roomAccess(room) && (
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+          && request.resource.data.reactions is map && request.resource.data.reactions.size() <= 500
+          && request.resource.data.reactions.diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([me()])
+          && (!(me() in request.resource.data.reactions) || request.resource.data.reactions[me()] in ['👍', '🎯', '🔥', '😂', '👏', '💯']))
+        || ('poll' in resource.data
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes'])
+          && request.resource.data.votes is map && request.resource.data.votes.size() <= 2000
+          && request.resource.data.votes.diff(resource.data.get('votes', {})).affectedKeys().hasOnly([me()])
+          && (!(me() in request.resource.data.votes) || (request.resource.data.votes[me()] is int
+            && request.resource.data.votes[me()] >= 0 && request.resource.data.votes[me()] < resource.data.poll.options.size()))));
       allow delete: if signedIn() && (resource.data.uid == me() || isAdmin());
+    }
+
+    // ---------- pinned message of a group chat (staff) ----------
+    match /pins/{room} {
+      allow read: if canRead() && roomOk(room) && roomAccess(room);
+      allow create, update: if isAdmin() && roomOk(room) && room.split(':')[0] != 'dm'
+        && request.resource.data.keys().hasOnly(['text', 'name', 'messageId', 'by', 'ts'])
+        && request.resource.data.by == me() && request.resource.data.ts == request.time
+        && request.resource.data.text is string && request.resource.data.text.size() <= 300
+        && request.resource.data.name is string && request.resource.data.name.size() <= 30
+        && request.resource.data.messageId is string && request.resource.data.messageId.size() <= 60;
+      allow delete: if isAdmin();
     }
 
     // ---------- private chat list ----------

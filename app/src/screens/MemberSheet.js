@@ -21,6 +21,11 @@ export default function MemberSheet({ user, onClose, onChat, onChallenge }) {
   const ddlAdmin = !!st.me?.ddlAdmin && !!user && user.id !== st.me?.id && ddlUser;
   const [card, setCard] = useState(undefined);   // undefined = loading, null = not available
   const [report, setReport] = useState(null);
+  const [online, setOnline] = useState(false);
+  useEffect(() => {
+    setOnline(false);
+    if (user?.id && user.id !== st.me?.id) chat.presence([user.id]).then(r => setOnline(!!r[user.id])).catch(() => {});
+  }, [user?.id]);
   useEffect(() => {
     setStaff(null);
     if (ddlAdmin) chat.request('staff.get', { userId: user.id }).then(r => setStaff(r.staff)).catch(() => {});
@@ -73,12 +78,12 @@ export default function MemberSheet({ user, onClose, onChat, onChallenge }) {
       <Pressable style={styles.scrim} onPress={onClose}>
         <Pressable style={styles.sheet} onPress={() => {}}>
           <View style={styles.hero}>
-            <View style={styles.heroAv}><Avatar user={user} size={70} /></View>
+            <View style={styles.heroAv}><Avatar user={user} size={70} online={online} /></View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <View style={[ui.row, { flexWrap: 'wrap' }]}><Text style={styles.name} numberOfLines={2}>{user.name}</Text><RoleTag user={user} /></View>
               <Text style={styles.heroSub} numberOfLines={1}>
                 {[card?.countryName && flag(card.country) + ' ' + card.countryName, card?.hometown].filter(Boolean).join(' · ')
-                  || (user.role === 'admin' ? 'DDL staff' : 'Player')}{member.sanction ? ' · ' + s.label : ''}
+                  || (user.role === 'admin' ? 'DDL staff' : 'Player')}{online ? ' · 🟢 Online' : ''}{member.sanction ? ' · ' + s.label : ''}
               </Text>
               {!!card?.dartsmind && (
                 <TouchableOpacity style={styles.dm} onPress={() => copy(card.dartsmind)} accessibilityLabel={'Copy Dartsmind name ' + card.dartsmind}>

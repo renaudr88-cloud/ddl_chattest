@@ -68,7 +68,18 @@ export async function pushOff() {
   await chat.site('chat-push-subscribe.php', { method: 'POST', body: { remove: endpoint } }).catch(() => {});
 }
 
-// Keep the service worker installed so a subscription keeps working after updates.
+// Keep the service worker installed so a subscription keeps working after updates, and tell the website
+// once a day that this device is still a DDL Chat device (for private-message and @tag notifications).
 export function pushBoot() {
-  if (pushSupported()) navigator.serviceWorker.getRegistration('/').then(r => r && r.update()).catch(() => {});
+  if (!pushSupported()) return;
+  navigator.serviceWorker.getRegistration('/').then(async r => {
+    if (!r) return;
+    r.update().catch(() => {});
+    const sub = Notification.permission === 'granted' && await r.pushManager.getSubscription();
+    if (!sub) return;
+    const key = 'ddl-chat-push-refresh', day = new Date().toDateString();
+    try { if (localStorage.getItem(key) === day) return; } catch {}
+    await chat.site('chat-push-subscribe.php', { method: 'POST', body: { subscription: sub.toJSON(), quiet: true } });
+    try { localStorage.setItem(key, day); } catch {}
+  }).catch(() => {});
 }

@@ -10,7 +10,7 @@ import {
 } from 'firebase/auth';
 import {
   collection, doc, query, where, orderBy, limit, startAfter, onSnapshot, getDoc, getDocs, setDoc, addDoc, updateDoc,
-  deleteDoc, writeBatch, serverTimestamp, Timestamp, arrayUnion, getCountFromServer, FieldPath, deleteField,
+  deleteDoc, writeBatch, serverTimestamp, Timestamp, arrayUnion, getCountFromServer, FieldPath, deleteField, documentId,
 } from 'firebase/firestore';
 import { auth, db, FIREBASE_READY } from './firebase';
 import { TEST_MODE, LOGIN_URL, UPLOAD_URL } from './config';
@@ -48,6 +48,7 @@ const initial = {
   premier: { member: false, members: [] },  // Premier League chat: am I in it; staff: everyone in it // my raffle access (null|pending|approved|declined|removed); staff: all requests
   blocked: null,           // {reason:'banned'|'kicked', until}
   hiddenDms: {},           // private chats I deleted: room -> time (ms); they come back when a newer message arrives
+  pins: {},                // room -> pinned message {text, name, messageId, ts} (staff pin one per channel)
   blockedUsers: [],        // players I blocked: [{id, name}] (blocks/{me}); their messages are hidden for me
   reports: [],             // staff: open reports from players (reports/*)
 };
@@ -395,6 +396,29 @@ class ChatClient {
       }, e => { if (e?.code !== 'permission-denied') this.set({ status: 'offline' }); resolve(); }));
     });
   }
+  // The pinned message of a channel (pins/{room}): live while the app is open.
+  watchPin(room) {
+    if (room.startsWith('dm:') || this.subs.has('pin:' + room)) return;
+    this.sub('pin:' + room, onSnapshot(doc(db, 'pins', room), s => {
+      const x = s.exists() ? s.data({ serverTimestamps: 'estimate' }) : null;
+      this.set(st => ({ pins: { ...st.pins, [room]: x && { text: x.text, name: x.name, messageId: x.messageId || '', ts: ms(x.ts) } } }));
+    }, () => {}));
+  }
+  // Who is online (lastSeen in the last 5 minutes). Cached 3 minutes; reads at most 30 players at a time.
+  async presence(ids) {
+    this.seen ||= new Map();
+    const now = Date.now();
+    const need = [...new Set(ids)].filter(id => id && !(this.seen.get(id)?.at > now - 3 * MIN)).slice(0, 30);
+    for (let i = 0; i < need.length; i += 10) {
+      const part = need.slice(i, i + 10);
+      try {
+        const s = await getDocs(query(collection(db, 'users'), where(documentId(), 'in', part)));
+        const got = new Map(s.docs.map(d => [d.id, ms(d.data().lastSeen)]));
+        for (const id of part) this.seen.set(id, { at: now, lastSeen: got.get(id) || 0 });
+      } catch { for (const id of part) this.seen.set(id, { at: now, lastSeen: 0 }); }
+    }
+    return Object.fromEntries(ids.map(id => [id, now - (this.seen.get(id)?.lastSeen || 0) < 5 * MIN]));
+  }
   async loadRoom(room) {
     await this.watchRoom(room);
     const list = this.state.rooms[room] || [];
@@ -429,7 +453,7 @@ class ChatClient {
     const x = d.data({ serverTimestamps: 'estimate' });
     this.roomOf.set(d.id, room);
     return { id: d.id, room, user: userOf(x), text: x.text || '', imageUrl: x.imageUrl || null, mentions: x.mentions || [], tournament: x.tournament || null,
-      reactions: x.reactions || {}, reply: x.reply || null, ts: ms(x.ts) };
+      reactions: x.reactions || {}, reply: x.reply || null, poll: x.poll || null, votes: x.votes || {}, ts: ms(x.ts) };
   }
   outFriendly(d, p) {
     const x = d.data({ serverTimestamps: 'estimate' });
@@ -475,6 +499,15 @@ class ChatClient {
     const room = dmRoom(platform, this.uid, other.id);
     await this.watchRoom(room);
     return { room, other };
+  }
+  // Phone notification for the other player of a private chat, and for players I @tagged (php/chat-push-send.php).
+  // Fire and forget: the message is already sent; a missing notification must never block the chat.
+  notify(room, text, tags) {
+    if (TEST_MODE || !this.uid?.startsWith('ddl-')) return;
+    const dm = room.startsWith('dm:');
+    const tagged = (tags || []).map(t => t.id).filter(id => id.startsWith('ddl-'));
+    if (dm) this.site('chat-push-send.php', { method: 'POST', body: { kind: 'dm', room, text } }).catch(() => {});
+    else if (tagged.length) this.site('chat-push-send.php', { method: 'POST', body: { kind: 'tag', room, to: tagged, text } }).catch(() => {});
   }
   async postMessage(room, text, imageUrl, otherHint, mentions, reply) {
     const batch = writeBatch(db);
@@ -541,6 +574,7 @@ class ChatClient {
         if (m?.id && m.id !== this.uid && text.includes('@' + m.name) && !tags.some(t => t.id === m.id)) tags.push({ id: String(m.id), name: String(m.name).slice(0, 30) });
       }
       await this.postMessage(room, text, imageUrl, null, tags.slice(0, 10), reply);
+      this.notify(room, text, tags.slice(0, 10));
     },
     // One reaction per player per message; the same emoji again takes it away.
     async react({ id, emoji }) {
@@ -607,6 +641,36 @@ class ChatClient {
         users[user.id] = String(user.name || 'Player').slice(0, 30);
       } else delete users[user.id];
       await setDoc(doc(db, 'blocks', this.uid), { users });
+    },
+    // Polls: a message with a question and 2–6 answers; everyone taps one (tap again to change).
+    async 'poll.post'({ room, q, options }) {
+      q = String(q || '').trim().slice(0, 120);
+      options = (options || []).map(o => String(o || '').trim().slice(0, 50)).filter(Boolean);
+      if (!q) fail('bad_input', 'Write a question.');
+      if (options.length < 2 || options.length > 6) fail('bad_input', 'Give 2 to 6 answers.');
+      if (room.startsWith('dm:')) fail('bad_input', 'Polls are for the group chats.');
+      this.canPost(q + ' ' + options.join(' '));
+      const msg = { ...this.mine(), text: '📊 ' + q, imageUrl: null, poll: { q, options }, ts: serverTimestamp() };
+      await setDoc(doc(collection(db, 'rooms', room, 'messages')), msg);
+    },
+    async 'poll.vote'({ id, choice }) {
+      const room = this.roomOf.get(id); if (!room) return;
+      if (isMuted(this.state.me)) fail('muted', 'You are muted.');
+      const msg = (this.state.rooms[room] || []).find(m => m.id === id);
+      const same = msg?.votes?.[this.uid] === choice;
+      await updateDoc(doc(db, 'rooms', room, 'messages', id), new FieldPath('votes', this.uid), same ? deleteField() : choice);
+    },
+    // Staff: pin one message at the top of a channel, or take it away.
+    async 'pin.set'({ room, message }) {
+      if (this.role !== 'admin') fail('forbidden', 'Staff only.');
+      if (room.startsWith('dm:')) fail('bad_input', 'Pins are for the group chats.');
+      const text = String(message.poll ? '📊 ' + message.poll.q : message.text || '📷 Picture').slice(0, 300);
+      await setDoc(doc(db, 'pins', room), { text, name: String(message.user?.name || '').slice(0, 30), messageId: String(message.id || '').slice(0, 60), by: this.uid, ts: serverTimestamp() });
+      await this.log('pin', message.user, `[${roomPlatform(room)}] ` + text.slice(0, 110));
+    },
+    async 'pin.clear'({ room }) {
+      if (this.role !== 'admin') fail('forbidden', 'Staff only.');
+      await deleteDoc(doc(db, 'pins', room));
     },
     // Delete a private chat for me: it disappears from my list and its messages are hidden for me.
     // The other player keeps it. A new message brings the chat back, with only the new messages.

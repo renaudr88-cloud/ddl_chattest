@@ -10,6 +10,7 @@ import { hasBad } from '../filter';
 import { Avatar, Header, Notice, RoleTag, Lightbox, Empty, timeLabel, clock, toast, showError } from '../components';
 import { C, R, themed, useTheme } from '../theme';
 import { TournamentCard } from './Tournaments';
+import { PollComposer, PollCard, PinBar, SearchBar } from './Extras';
 
 export default function ChatScreen({ room, title, subtitle, onBack, onUser, right, below }) {
   const st = useChat();
@@ -23,6 +24,11 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
   const [menu, setMenu] = useState(null);     // message held down: react / reply / copy / delete
   const [reply, setReply] = useState(null);   // message I am answering
   const [report, setReport] = useState(null); // {user, room, message} being reported
+  const [pollOpen, setPollOpen] = useState(false);
+  const [searchOn, setSearchOn] = useState(false);
+  const [q, setQ] = useState('');
+  const group = !room.startsWith('dm:');
+  useEffect(() => { chat.watchPin(room); }, [room]);
   const searchTimer = useRef(null);
   const list = st.rooms[room];
   const muted = isMuted(st.me);
@@ -39,7 +45,10 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
   const hide = useMemo(() => blockedSet(st), [st.blockedUsers]);
   // A private chat I deleted: only the messages after that moment.
   const since = (st.hiddenDms || {})[room] || 0;
-  const data = useMemo(() => (list ? [...list].filter(m => !hide.has(m.user.id) && !(since && m.ts <= since)).reverse() : []), [list, hide, since]);
+  const ql = searchOn ? q.trim().toLowerCase() : '';
+  const data = useMemo(() => (list ? [...list].filter(m => !hide.has(m.user.id) && !(since && m.ts <= since)
+    && (ql.length < 2 || (m.text || '').toLowerCase().includes(ql) || m.user.name.toLowerCase().includes(ql)
+      || (m.poll && m.poll.options.some(o => o.toLowerCase().includes(ql))))).reverse() : []), [list, hide, since, ql]);
 
   // People who recently talked here come first in the @ list; the rest is found by name.
   const recent = useMemo(() => {
@@ -117,7 +126,8 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
             {(mine || admin) && <TouchableOpacity onPress={() => del(m)} hitSlop={8}><Text style={styles.del}>Delete</Text></TouchableOpacity>}
           </View>
           {!!m.reply && <View style={styles.quote}><Text style={styles.quoteName}>{m.reply.name}</Text><Text style={styles.quoteTxt} numberOfLines={2}>{m.reply.text}</Text></View>}
-          {!!m.text && <Text style={styles.txt}>{withTags(m.text, m.mentions, st.me?.id, onUser)}</Text>}
+          {!!m.poll ? <PollCard m={m} meId={st.me?.id} canVote={!muted} />
+            : !!m.text && <Text style={styles.txt}>{withTags(m.text, m.mentions, st.me?.id, onUser)}</Text>}
           {!!m.tournament && <TournamentCard tournament={m.tournament} />}
           {!!m.imageUrl && <TouchableOpacity onPress={() => setZoom(m.imageUrl)}><Image source={{ uri: m.imageUrl }} style={styles.img} resizeMode="cover" /></TouchableOpacity>}
           <Reactions m={m} meId={st.me?.id} onReact={e => react(m, e)} />
@@ -128,8 +138,16 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
-      <Header title={title} subtitle={subtitle} onBack={onBack} right={right} />
+      <Header title={title} subtitle={subtitle} onBack={onBack} right={
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <TouchableOpacity onPress={() => { setSearchOn(!searchOn); setQ(''); }} hitSlop={8} accessibilityLabel="Search in this chat">
+            <Text style={{ fontSize: 18, color: C.white }}>🔍</Text></TouchableOpacity>
+          {right}
+        </View>} />
       {below}
+      {group && <PinBar pin={st.pins?.[room]} staff={admin} onClear={() => chat.request('pin.clear', { room }).then(() => toast('Unpinned.')).catch(showError)} />}
+      {searchOn && <SearchBar q={q} setQ={setQ} count={data.length} more={!!st.more?.[room]} onOlder={() => chat.loadOlder(room).catch(() => {})}
+        onClose={() => { setSearchOn(false); setQ(''); }} />}
       {st.status !== 'online' && <Text style={styles.conn}>{st.status === 'connecting' ? 'Connecting…' : 'Offline. Reconnecting…'}</Text>}
       {!list ? <View style={{ flex: 1 }}><ActivityIndicator color={C.orange} style={{ marginTop: 40 }} /></View> :
         <FlatList
@@ -159,6 +177,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
         </View>}
         <View style={styles.row}>
           {CAN_UPLOAD && <TouchableOpacity style={styles.icon} onPress={pick} disabled={muted} accessibilityLabel="Add a picture"><Text style={{ fontSize: 20 }}>📷</Text></TouchableOpacity>}
+          {group && <TouchableOpacity style={styles.icon} onPress={() => setPollOpen(true)} disabled={muted} accessibilityLabel="New poll"><Text style={{ fontSize: 20 }}>📊</Text></TouchableOpacity>}
           <TextInput style={styles.input} value={text} onChangeText={onType} multiline maxLength={1000} editable={!muted}
             placeholder={room.startsWith('dm:') ? 'Write a private message…' : 'Message… type @ to tag a player'} placeholderTextColor={C.muted} />
           <TouchableOpacity style={[styles.send, (muted || sending) && { opacity: 0.45 }]} onPress={send} disabled={muted || sending}>
@@ -171,7 +190,9 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
         mine={menu?.reactions?.[st.me?.id]}
         onReact={e => { react(menu, e); setMenu(null); }} onReply={() => { setReply(menu); setMenu(null); }}
         onDelete={() => { del(menu); setMenu(null); }}
-        onReport={menu && menu.user.id !== st.me?.id ? () => { setReport({ user: menu.user, room, message: menu }); setMenu(null); } : null} />
+        onReport={menu && menu.user.id !== st.me?.id ? () => { setReport({ user: menu.user, room, message: menu }); setMenu(null); } : null}
+        onPin={admin && group ? () => { chat.request('pin.set', { room, message: menu }).then(() => toast('Pinned at the top. 📌')).catch(showError); setMenu(null); } : null} />
+      <PollComposer visible={pollOpen} room={room} onClose={() => setPollOpen(false)} />
       <ReportSheet target={report} onClose={() => setReport(null)} />
     </KeyboardAvoidingView>
   );
@@ -194,7 +215,7 @@ function Reactions({ m, meId, onReact }) {
 }
 
 // Hold a message: react with one tap, reply, copy or delete.
-function MessageMenu({ m, onClose, onReact, onReply, onDelete, onReport, canDelete, canReact, mine }) {
+function MessageMenu({ m, onClose, onReact, onReply, onDelete, onReport, onPin, canDelete, canReact, mine }) {
   if (!m) return null;
   const copy = async () => { try { await Clipboard.setStringAsync(m.text); toast('Copied.'); } catch {} onClose(); };
   return (
@@ -211,6 +232,7 @@ function MessageMenu({ m, onClose, onReact, onReply, onDelete, onReport, canDele
           {canReact && <MenuItem label="↩  Reply" onPress={onReply} />}
           {!!m.text && <MenuItem label="⧉  Copy text" onPress={copy} />}
           {canDelete && <MenuItem label="🗑  Delete" onPress={onDelete} danger />}
+          {!!onPin && <MenuItem label="📌  Pin at the top" onPress={onPin} />}
           {!!onReport && <MenuItem label="🚩  Report to staff" onPress={onReport} danger />}
           <MenuItem label="Cancel" onPress={onClose} />
         </Pressable>

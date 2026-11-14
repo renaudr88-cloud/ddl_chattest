@@ -16,7 +16,7 @@ export function smallPhoto(url, size = 36) {
   if (!/^(images|uploads)\/[A-Za-z0-9_./-]+\.(jpe?g|png|webp|gif)$/i.test(path)) return url;
   return `${SITE_BASE}chat-avatar.php?s=${size > 48 ? 200 : 96}&f=${encodeURIComponent(path)}`;
 }
-export function Avatar({ user, size = 36, onPress }) {
+export function Avatar({ user, size = 36, onPress, online }) {
   const [failed, setFailed] = useState(false);
   const small = smallPhoto(user?.avatar, size);
   const body = user?.avatar
@@ -25,7 +25,10 @@ export function Avatar({ user, size = 36, onPress }) {
     : <View style={[s.av, { width: size, height: size, borderRadius: size / 2, backgroundColor: colorFor(user?.id) }]}>
         <Text style={[s.avTxt, { fontSize: size * 0.4 }]}>{initials(user?.name)}</Text>
       </View>;
-  return onPress ? <TouchableOpacity onPress={onPress} accessibilityLabel={user?.name}>{body}</TouchableOpacity> : body;
+  const d = Math.max(10, Math.round(size * 0.28));
+  const withDot = online ? <View>{body}<View accessibilityLabel="Online" style={{ position: 'absolute', right: 0, bottom: 0, width: d, height: d,
+    borderRadius: d / 2, backgroundColor: '#22c55e', borderWidth: 2, borderColor: '#ffffff' }} /></View> : body;
+  return onPress ? <TouchableOpacity onPress={onPress} accessibilityLabel={user?.name}>{withDot}</TouchableOpacity> : withDot;
 }
 
 // "<Dartsmind logo> name": a player's Dartsmind name with the Dartsmind logo in front.

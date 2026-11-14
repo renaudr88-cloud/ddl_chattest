@@ -12,6 +12,7 @@ self.addEventListener('push', e => {
     icon: '/icon-192.png',
     badge: '/icon-192.png',
     tag: d.tag || undefined,
+    renotify: !!d.tag,
     data: { url: d.url || '/' },
   }));
 });
@@ -22,7 +23,11 @@ self.addEventListener('notificationclick', e => {
   e.waitUntil((async () => {
     const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const c of all) {
-      if (c.url.startsWith(self.location.origin)) { await c.focus(); return; }
+      if (c.url.startsWith(self.location.origin)) {
+        // Open the right chat (?dm= / ?room=) in the window that is already open.
+        if (url !== self.location.origin + '/' && 'navigate' in c) { try { await c.navigate(url); } catch {} }
+        await c.focus(); return;
+      }
     }
     await self.clients.openWindow(url);
   })());

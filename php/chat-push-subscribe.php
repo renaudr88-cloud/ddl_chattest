@@ -7,6 +7,9 @@
 // GET  /chat-push-subscribe.php                                   -> {"publicKey": "<VAPID public key>"}
 // POST /chat-push-subscribe.php {"subscription": {endpoint, keys:{p256dh, auth}}}  -> saves it, sends a test notification
 // POST /chat-push-subscribe.php {"remove": "<endpoint>"}           -> deletes it
+// POST ... {"subscription": {...}, "quiet": true}  -> refresh only (no test notification)
+// The chat's own devices are also listed in chat_push_endpoints (made here), so chat-push-send.php can send
+// private-message and @tag notifications to the chat only, not to the website.
 // Header: Authorization: Bearer <token from chat-login.php>
 require __DIR__ . '/chat-config.php';
 chat_cors();
@@ -25,6 +28,17 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $in = json_decode(file_get_contents('php://input') ?: '', true);
 if (!is_array($in)) chat_json(400, ['error' => 'Bad request.']);
 $db = chat_db();
+function chat_push_table(PDO $db): bool {
+    try {
+        $db->exec("CREATE TABLE IF NOT EXISTS chat_push_endpoints (
+            endpoint_hash CHAR(40) NOT NULL PRIMARY KEY,
+            endpoint TEXT NOT NULL,
+            user_id INT NOT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY user_id (user_id))");
+        return true;
+    } catch (Throwable $e) { error_log('chat_push_endpoints: ' . $e->getMessage()); return false; }
+}
 
 // Only push services' https addresses are accepted.
 function chat_push_endpoint_ok($e): bool {
@@ -34,6 +48,7 @@ function chat_push_endpoint_ok($e): bool {
 if (isset($in['remove'])) {
     if (chat_push_endpoint_ok($in['remove'])) {
         $db->prepare('DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?')->execute([$uid, $in['remove']]);
+        if (chat_push_table($db)) $db->prepare('DELETE FROM chat_push_endpoints WHERE endpoint_hash = ?')->execute([sha1($in['remove'])]);
     }
     chat_json(200, ['ok' => true]);
 }
@@ -52,6 +67,9 @@ try {
     $db->prepare('DELETE FROM push_subscriptions WHERE endpoint = ?')->execute([$endpoint]);
     $db->prepare('INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?)')
        ->execute([$uid, $endpoint, $p256dh, $auth]);
+    if (chat_push_table($db)) {
+        $db->prepare('REPLACE INTO chat_push_endpoints (endpoint_hash, endpoint, user_id) VALUES (?, ?, ?)')->execute([sha1($endpoint), $endpoint, $uid]);
+    }
 } catch (Throwable $e) {
     error_log('chat-push-subscribe: ' . $e->getMessage());
     chat_json(500, ['error' => 'Could not save. Try again later.']);
@@ -59,6 +77,7 @@ try {
 
 // A test notification to this device only, so the player sees it works.
 $sent = false;
+if (!empty($in['quiet'])) chat_json(200, ['ok' => true]);
 try {
     if (is_file(__DIR__ . '/vendor/autoload.php') && defined('VAPID_PRIVATE_KEY')) {
         require_once __DIR__ . '/vendor/autoload.php';
