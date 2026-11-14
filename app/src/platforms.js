@@ -1,4 +1,4 @@
-// Each platform has its own General chat, Friendlies, Dartswap, Help desk and private chats.
+// Each platform has its own General chat, Friendlies, Help desk and private chats.
 // The keys must match PLATFORMS in server/.env. To add one later (e.g. DartCounter), add a line here.
 // logo: an image, or null to show the initial on a coloured tile (used until a logo is approved).
 export const PLATFORMS = [

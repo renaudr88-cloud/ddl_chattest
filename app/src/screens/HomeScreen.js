@@ -14,7 +14,6 @@ import { C, themed, useTheme, setTheme, THEMES, PALETTES } from '../theme';
 import ChatScreen from './ChatScreen';
 import MessagesScreen from './MessagesScreen';
 import FriendliesScreen from './FriendliesScreen';
-import SwapScreen from './SwapScreen';
 import HelpScreen from './HelpScreen';
 import AdminScreen from './AdminScreen';
 import MemberSheet from './MemberSheet';
@@ -27,7 +26,6 @@ const TABS = [
   ['chat', '#', 'Chat'],
   ['messages', '✉', 'Messages'],
   ['friendlies', '🎯', 'Friendlies'],
-  ['swap', '⇄', 'Dartswap'],
   ['help', '?', 'Help'],
 ];
 
@@ -153,7 +151,6 @@ export default function HomeScreen() {
   }
   else if (tab === 'messages') body = <MessagesScreen onOpen={openDM} />;
   else if (tab === 'friendlies') body = <FriendliesScreen onOpenDM={openDM} onUser={onUser} />;
-  else if (tab === 'swap') body = <SwapScreen onUser={onUser} />;
   else body = <HelpScreen onOpenDM={openDM} />;
 
   return (
