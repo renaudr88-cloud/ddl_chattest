@@ -474,6 +474,15 @@ class ChatClient {
       await deleteDoc(doc(db, 'premierMembers', user.id));
       await this.log('premier_remove', user, '');
     },
+    // Staff give a player raffle access straight away (no request needed).
+    async 'raffle.grant'({ user }) {
+      if (this.role !== 'admin') fail('forbidden', 'Staff only.');
+      const ref = doc(db, 'raffleAccess', user.id);
+      const cur = this.state.raffle.requests.find(x => x.id === user.id) || (await getDoc(ref)).exists();
+      if (cur) await updateDoc(ref, { status: 'approved', by: this.uid, decidedAt: serverTimestamp() });
+      else await setDoc(ref, { name: String(user.name).slice(0, 30), status: 'approved', ts: serverTimestamp(), by: this.uid, decidedAt: serverTimestamp() });
+      await this.log('raffle_approved', user, '');
+    },
     async 'raffle.decide'({ uid, status }) {
       if (this.role !== 'admin') fail('forbidden', 'Staff only.');
       if (!['approved', 'declined', 'removed'].includes(status)) fail('bad_input', 'Unknown choice.');

@@ -211,10 +211,15 @@ service cloud.firestore {
     match /raffleAccess/{uid} {
       allow read: if signedIn() && (uid == me() || isAdmin());
       // A player asks for access (again after a refusal); staff approve, decline or remove.
-      allow create: if canPost() && uid == me()
+      allow create: if (canPost() && uid == me()
         && request.resource.data.keys().hasOnly(['name', 'status', 'ts'])
         && request.resource.data.name == myName() && request.resource.data.status == 'pending'
-        && request.resource.data.ts == request.time;
+        && request.resource.data.ts == request.time)
+        // Staff can also let a player in directly.
+        || (isAdmin() && request.resource.data.keys().hasOnly(['name', 'status', 'ts', 'by', 'decidedAt'])
+        && request.resource.data.name is string && request.resource.data.name.size() <= 30
+        && request.resource.data.status == 'approved' && request.resource.data.by == me()
+        && request.resource.data.ts == request.time && request.resource.data.decidedAt == request.time);
       allow update: if (isAdmin() && changed().hasOnly(['status', 'by', 'decidedAt'])
             && request.resource.data.status in ['approved', 'declined', 'removed'] && request.resource.data.by == me())
         || (canPost() && uid == me() && resource.data.status in ['declined', 'removed']

@@ -18,6 +18,8 @@ import AdminScreen from './AdminScreen';
 import MemberSheet from './MemberSheet';
 import Welcome, { welcomeSeen } from './Welcome';
 import { soundOn, setSound } from '../sound';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { pushStatus, pushOn, pushOff, pushBoot } from '../push';
 
 const TABS = [
   ['chat', '#', 'Chat'],
@@ -151,6 +153,7 @@ export default function HomeScreen() {
           })}
         </View>
       )}
+      {!dm && !admin && <PushBar me={st.me} />}
       <View style={{ flex: 1 }}>{body}</View>
       {!dm && !admin && (
         <View style={styles.tabs}>
@@ -226,6 +229,69 @@ function DartsmindBar({ other }) {
 }
 
 // Settings: sound on or off (a ping for private messages, @tags and website notifications).
+// Phone/computer notifications from the DDL website (tournament reminders, check-in, reserve spots…), via DDL Chat.
+function usePush(me) {
+  const [status, setStatus] = useState(null);   // on | off | blocked | homescreen | unsupported
+  const ddl = !!me?.id?.startsWith('ddl-');
+  useEffect(() => { if (ddl) { pushBoot(); pushStatus().then(setStatus); } }, [ddl]);
+  return [ddl ? status : 'unsupported', setStatus];
+}
+const PUSH_TEXT = {
+  on: 'On for this device: DDL notifications arrive even when the chat is closed.',
+  off: 'Tournament reminders, check-in alerts and reserve spots on this device, even when the chat is closed.',
+  blocked: 'Blocked in your browser. Allow notifications for this site in the browser settings.',
+  homescreen: 'iPhone: tap Share → "Add to Home Screen", open DDL Chat from there, then turn this on.',
+};
+function PushSwitch({ me }) {
+  const [status, setStatus] = usePush(me);
+  const [busy, setBusy] = useState(false);
+  if (!status || status === 'unsupported') return null;
+  const on = status === 'on';
+  const flip = async () => {
+    if (status === 'blocked' || status === 'homescreen') return;
+    setBusy(true);
+    try {
+      if (on) { await pushOff(); toast('Notifications off for this device.'); }
+      else { await pushOn(); toast('Notifications on. 🔔'); }
+      setStatus(await pushStatus());
+    } catch (e) { showError(e); setStatus(await pushStatus()); }
+    setBusy(false);
+  };
+  return (
+    <TouchableOpacity onPress={flip} disabled={busy} style={[styles.switchRow, busy && { opacity: 0.5 }]} accessibilityRole="switch" accessibilityState={{ checked: on }}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.label}>Notifications</Text>
+        <Text style={{ color: C.muted, fontSize: 13 }}>{PUSH_TEXT[status]}</Text>
+        {on && <Text style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>Also turned on at ddl-online.com? Then you get each one twice: switch one off.</Text>}
+      </View>
+      <View style={[styles.switch, on && styles.switchOn]}><View style={[styles.knob, on && { alignSelf: 'flex-end' }]} /></View>
+    </TouchableOpacity>
+  );
+}
+// A one-time bar inviting players to turn notifications on.
+const PUSH_BAR_KEY = 'ddl-chat-pushbar';
+function PushBar({ me }) {
+  const [status, setStatus] = usePush(me);
+  const [hide, setHide] = useState(true);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { AsyncStorage.getItem(PUSH_BAR_KEY).then(v => setHide(v === '1')).catch(() => setHide(false)); }, []);
+  if (hide || !(status === 'off' || status === 'homescreen')) return null;
+  const close = () => { setHide(true); AsyncStorage.setItem(PUSH_BAR_KEY, '1').catch(() => {}); };
+  const turnOn = async () => {
+    setBusy(true);
+    try { await pushOn(); toast('Notifications on. 🔔'); setStatus('on'); close(); }
+    catch (e) { showError(e); setStatus(await pushStatus()); }
+    setBusy(false);
+  };
+  return (
+    <View style={styles.pushBar}>
+      <Text style={styles.pushTxt}>🔔 {status === 'homescreen' ? PUSH_TEXT.homescreen : 'Get DDL reminders on this device: check-in, reserve spots, your matches.'}</Text>
+      {status === 'off' && <Btn small kind="pri" title="Turn on" loading={busy} onPress={turnOn} />}
+      <TouchableOpacity onPress={close} accessibilityLabel="Close" style={{ padding: 6 }}><Text style={{ color: C.muted, fontSize: 18 }}>✕</Text></TouchableOpacity>
+    </View>
+  );
+}
+
 function SoundSwitch() {
   const [on, setOn] = useState(soundOn());
   const flip = () => { setSound(!on); setOn(!on); };
@@ -269,6 +335,7 @@ function Settings({ visible, theme, me, onClose, onModeration, onHelp }) {
             })}
           </View>
           <SoundSwitch />
+          <PushSwitch me={me} />
           <Btn title="How the chat works" onPress={onHelp} />
           <Btn title="Log out" onPress={() => { onClose(); chat.logout(); }} />
           <Btn title="Close" kind="ghost" onPress={onClose} />
@@ -283,6 +350,8 @@ const styles = themed(C => ({
   matchSub: { color: C.muted, fontSize: 12 },
   matchTxt: { color: C.fg, fontSize: 15 },
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  pushBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: C.navy2, borderBottomWidth: 2, borderBottomColor: C.orange },
+  pushTxt: { color: C.white, fontSize: 13, flex: 1 },
   switch: { width: 52, height: 30, borderRadius: 15, backgroundColor: C.line, padding: 3, justifyContent: 'center' },
   switchOn: { backgroundColor: C.orange },
   knob: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#fff' },
