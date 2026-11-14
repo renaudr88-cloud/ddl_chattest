@@ -224,7 +224,7 @@ function MyMatches({ onOpen }) {
 }
 
 // Private chat on Dartsmind: the other player's Dartsmind name, ready to copy (to invite them in Dartsmind).
-function DartsmindBar({ other }) {
+export function DartsmindBar({ other }) {
   const [name, setName] = useState(other.dartsmind);
   useEffect(() => {
     if (name !== undefined || !String(other.id).startsWith('ddl-')) return;
@@ -236,7 +236,7 @@ function DartsmindBar({ other }) {
   };
   return (
     <View style={styles.dmBar}>
-      <View style={{ flex: 1 }}><DartsmindName name={name} size={22} bold style={[styles.dmBarTxt, { flex: 0 }]} /></View>
+      <View style={{ flex: 1, minWidth: 0 }}><DartsmindName name={name} size={22} bold style={styles.dmName} /></View>
       <TouchableOpacity onPress={copy} style={styles.copyBtn} accessibilityRole="button" accessibilityLabel={'Copy Dartsmind name ' + name}>
         <Text style={styles.copyTxt}>Copy</Text>
       </TouchableOpacity>
@@ -378,6 +378,7 @@ const styles = themed(C => ({
   knob: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#fff' },
   dmBar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: C.navy2 },
   dmBarTxt: { color: C.white, fontSize: 14, flex: 1 },
+  dmName: { color: C.white, fontSize: 15 },
   copyBtn: { backgroundColor: C.orange, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 6 },
   copyTxt: { color: C.white, fontWeight: '900', fontSize: 13 },
   platBar: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8, backgroundColor: C.navy },
