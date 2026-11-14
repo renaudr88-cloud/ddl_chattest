@@ -677,6 +677,23 @@ class ChatClient {
       const ref = await addDoc(collection(db, 'platforms', platform, 'swap'), { ...this.mine(), kind, title, price, cond, desc, images, status: 'open', ts: serverTimestamp() });
       return { id: ref.id };
     },
+    // Members Swaps from ddl-online.com (php/chat-swaps.php): the same listings as on the website.
+    async 'swaps.site'({ force } = {}) {
+      if (TEST_MODE || !this.uid?.startsWith('ddl-')) return { list: [] };
+      if (!force && this.siteSwaps && Date.now() - this.siteSwaps.at < 60 * 1000) return { list: this.siteSwaps.list };
+      const r = await this.site('chat-swaps.php');
+      this.siteSwaps = { at: Date.now(), list: r.list || [] };
+      return { list: this.siteSwaps.list };
+    },
+    async 'swaps.siteAdd'({ title, desc, swapFor, price, images }) {
+      this.canPost(title + ' ' + desc + ' ' + (swapFor || ''));
+      await this.site('chat-swaps.php', { method: 'POST', body: { action: 'add', title, desc, swapFor, price, images } });
+      this.siteSwaps = null;
+    },
+    async 'swaps.siteRemove'({ id }) {
+      await this.site('chat-swaps.php', { method: 'POST', body: { action: 'remove', id } });
+      this.siteSwaps = null;
+    },
     async 'swap.done'({ id }) { await updateDoc(doc(db, 'platforms', this.platformOf('swap', id), 'swap', id), { status: 'done' }); },
     async 'swap.delete'({ id }) {
       const p = this.platformOf('swap', id);

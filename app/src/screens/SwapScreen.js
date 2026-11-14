@@ -1,8 +1,11 @@
 // Dartswap: sell, swap or ask for second-hand gear (up to 3 photos). Buyers message the seller privately.
-import { useState } from 'react';
+// With a DDL account this is the same marketplace as Members Swaps on ddl-online.com (php/chat-swaps.php):
+// website listings show here, and Sell / Swap listings made here also appear on the website.
+import { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TextInput, Image, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { chat, useChat, isMuted, listHere, CAN_UPLOAD } from '../chat';
+import { chat, useChat, isMuted, listHere, CAN_UPLOAD, blockedSet } from '../chat';
+import { TEST_MODE } from '../config';
 import { hasBad } from '../filter';
 import { Avatar, Header, Btn, Chip, Pick, Segmented, Empty, Notice, Lightbox, ConfirmBtn, timeLabel, toast, showError, s as ui } from '../components';
 import { C, themed } from '../theme';
@@ -22,6 +25,12 @@ export default function SwapScreen({ onUser }) {
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState('All');
   const [zoom, setZoom] = useState(null);
+  const [swapFor, setSwapFor] = useState('');
+  const [siteList, setSiteList] = useState([]);   // Members Swaps from the website
+  const site = !TEST_MODE && !!st.me?.id?.startsWith('ddl-');
+  const loadSite = force => site && chat.request('swaps.site', { force }).then(r => setSiteList(r.list)).catch(() => {});
+  useEffect(() => { loadSite(); const t = setInterval(() => loadSite(true), 2 * 60 * 1000); return () => clearInterval(t); }, [site]);
+  const toSite = site && kind !== 'Wanted';      // Sell / Swap go to the website's Members Swaps
   const muted = isMuted(st.me);
   const admin = st.me?.role === 'admin';
 
@@ -39,19 +48,35 @@ export default function SwapScreen({ onUser }) {
   };
   const post = async () => {
     if (!title.trim()) return toast('Add a title.', true);
-    if (hasBad(title + ' ' + desc)) return toast('Blocked: your listing contains a word that is not allowed.', true);
+    if (hasBad(title + ' ' + desc + ' ' + swapFor)) return toast('Blocked: your listing contains a word that is not allowed.', true);
+    if (toSite) {
+      if (!desc.trim()) return toast('Add a description.', true);
+      if (kind === 'Sell' && !price.trim()) return toast('Add a price.', true);
+      if (kind === 'Swap' && !swapFor.trim()) return toast('Say what you want to swap it for.', true);
+      if (!imgs.length) return toast('Add at least one photo.', true);
+    }
     setBusy(true);
     try {
       const images = [];
       for (const uri of imgs) images.push(await chat.uploadImage(uri, 280_000));   // 3 photos must fit in one listing
-      await chat.requestHere('swap.post', { kind, title, price, cond, desc, images });
-      setTitle(''); setPrice(''); setDesc(''); setImgs([]); setShowForm(false); setFilter('All');
-      toast('Listing posted.');
+      if (toSite) {
+        await chat.request('swaps.siteAdd', { title, desc: cond && cond !== 'Any' ? `${desc}\n\nCondition: ${cond}` : desc,
+          swapFor: kind === 'Swap' ? swapFor : '', price: kind === 'Sell' ? price : '', images });
+        loadSite(true);
+      } else await chat.requestHere('swap.post', { kind, title, price, cond, desc, images });
+      setTitle(''); setPrice(''); setDesc(''); setSwapFor(''); setImgs([]); setShowForm(false); setFilter('All');
+      toast(toSite ? 'Listing posted, also on ddl-online.com.' : 'Listing posted.');
     } catch (e) { showError(e); }
     setBusy(false);
   };
+  const removeSite = x => chat.request('swaps.siteRemove', { id: x.siteId }).then(() => { toast('Listing removed.'); loadSite(true); }).catch(showError);
 
-  const list = listHere(st, 'swap').filter(x => filter === 'All' || x.kind === filter);
+  const hide = blockedSet(st);
+  const fromSite = siteList.filter(x => !hide.has(x.user.id)).map(x => ({
+    id: 'site-' + x.id, siteId: x.id, site: true, user: x.user, kind: x.price ? 'Sell' : 'Swap', title: x.title, price: x.price || '',
+    swapFor: x.swapFor, cond: '', desc: x.desc, images: x.images, status: 'open', ts: x.ts }));
+  const list = [...listHere(st, 'swap'), ...fromSite].sort((a, b) => (a.status === 'done') - (b.status === 'done') || b.ts - a.ts)
+    .filter(x => filter === 'All' || x.kind === filter);
 
   return (
     <View style={{ flex: 1, backgroundColor: C.bg }}>
@@ -77,9 +102,11 @@ export default function SwapScreen({ onUser }) {
             </View>
           </View>}
           <TextInput style={ui.input} placeholder="Title, e.g. Harrows Assassin 22g" placeholderTextColor={C.muted} value={title} onChangeText={setTitle} maxLength={70} />
-          {kind === 'Sell' && <TextInput style={ui.input} placeholder="Price in €" placeholderTextColor={C.muted} keyboardType="decimal-pad" value={price} onChangeText={setPrice} maxLength={10} />}
+          {kind === 'Sell' && <TextInput style={ui.input} placeholder={toSite ? 'Price in £' : 'Price in €'} placeholderTextColor={C.muted} keyboardType="decimal-pad" value={price} onChangeText={setPrice} maxLength={10} />}
+          {kind === 'Swap' && toSite && <TextInput style={ui.input} placeholder="Swap for, e.g. 24g Target barrels" placeholderTextColor={C.muted} value={swapFor} onChangeText={setSwapFor} maxLength={150} />}
           <Segmented options={[['New', 'New'], ['Like new', 'Like new'], ['Used', 'Used'], ['Any', 'Any']]} value={cond} onChange={setCond} />
           <TextInput style={[ui.input, { minHeight: 70, textAlignVertical: 'top' }]} multiline placeholder="Weight, grip, what's included, shipping or pick-up" placeholderTextColor={C.muted} value={desc} onChangeText={setDesc} maxLength={400} />
+          {toSite && <Text style={{ color: C.muted, fontSize: 12 }}>🌐 Also shown on Members Swaps on ddl-online.com. Description and at least one photo are needed.</Text>}
           {muted && <Notice text="You are muted and cannot post right now." />}
           <Btn kind="pri" title="Post listing" loading={busy} disabled={muted} onPress={post} />
         </View>}
@@ -91,16 +118,18 @@ export default function SwapScreen({ onUser }) {
           return (
             <View key={x.id} style={[ui.card, !open && { opacity: 0.55 }]}>
               {x.images.length > 0 && <Photos images={x.images} onOpen={setZoom} />}
-              <View style={ui.row}><Chip solid label={x.kind} color={KIND_COLOR[x.kind]} />{!open && <Chip solid label={x.kind === 'Wanted' ? 'Found' : 'Sold / swapped'} />}<Chip label={x.cond} /></View>
+              <View style={ui.row}><Chip solid label={x.kind} color={KIND_COLOR[x.kind]} />{!open && <Chip solid label={x.kind === 'Wanted' ? 'Found' : 'Sold / swapped'} />}{!!x.cond && <Chip label={x.cond} />}{x.site && <Chip label="🌐 ddl-online.com" />}</View>
               <Text style={{ color: C.fg, fontSize: 17, fontWeight: '700' }}>{x.title}</Text>
-              {x.kind === 'Sell' && !!x.price && <Text style={{ color: C.fg, fontSize: 24, fontWeight: '900' }}>€{x.price}</Text>}
+              {x.kind === 'Sell' && !!x.price && <Text style={{ color: C.fg, fontSize: 24, fontWeight: '900' }}>{x.site ? '£' : '€'}{x.price}</Text>}
+              {!!x.swapFor && <Text style={{ color: C.fg, fontWeight: '700' }}>🔁 Swap for: <Text style={{ fontWeight: '400' }}>{x.swapFor}</Text></Text>}
               {!!x.desc && <Text style={{ color: C.muted }}>{x.desc}</Text>}
               <View style={ui.row}><Avatar user={x.user} onPress={() => onUser(x.user)} />
                 <View><Text style={{ color: C.fg, fontWeight: '700' }}>{x.user.name}</Text><Text style={{ color: C.muted, fontSize: 12 }}>{timeLabel(x.ts)}</Text></View></View>
               <View style={ui.row}>
                 {open && !mine && <Btn small kind="pri" title={x.kind === 'Wanted' ? 'Message buyer' : 'Message seller'} onPress={() => onUser(x.user, true)} />}
-                {open && mine && <Btn small title={x.kind === 'Wanted' ? 'Mark found' : 'Mark sold'} onPress={() => chat.request('swap.done', { id: x.id }).catch(showError)} />}
-                {(mine || admin) && <ConfirmBtn small title="Delete" confirmTitle="Tap to delete" onConfirm={() => chat.request('swap.delete', { id: x.id }).catch(showError)} />}
+                {open && mine && !x.site && <Btn small title={x.kind === 'Wanted' ? 'Mark found' : 'Mark sold'} onPress={() => chat.request('swap.done', { id: x.id }).catch(showError)} />}
+                {(mine || admin) && !x.site && <ConfirmBtn small title="Delete" confirmTitle="Tap to delete" onConfirm={() => chat.request('swap.delete', { id: x.id }).catch(showError)} />}
+                {(mine || admin) && x.site && <ConfirmBtn small title={mine ? 'Sold / remove' : 'Remove'} confirmTitle="Tap to remove" onConfirm={() => removeSite(x)} />}
               </View>
             </View>);
         })}
