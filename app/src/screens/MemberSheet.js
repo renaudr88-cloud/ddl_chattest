@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, Modal, Pressable, ScrollView, Linking, Image, TouchableOpacity } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { chat, useChat } from '../chat';
-import { Avatar, Btn, ConfirmBtn, RoleTag, toast, showError, s as ui } from '../components';
+import { Avatar, Btn, ConfirmBtn, RoleTag, DartsmindName, toast, showError, s as ui } from '../components';
 import { statusOf } from './AdminScreen';
 import { ReportSheet, BlockButton } from './Report';
 import { LOGIN_URL, TEST_MODE } from '../config';
@@ -82,7 +82,7 @@ export default function MemberSheet({ user, onClose, onChat, onChallenge }) {
               </Text>
               {!!card?.dartsmind && (
                 <TouchableOpacity style={styles.dm} onPress={() => copy(card.dartsmind)} accessibilityLabel={'Copy Dartsmind name ' + card.dartsmind}>
-                  <Text style={styles.dmTxt} numberOfLines={1}>🎯 {card.dartsmind}</Text><Text style={styles.dmCopy}>Copy</Text>
+                  <DartsmindName name={card.dartsmind} size={18} style={styles.dmTxt} /><Text style={styles.dmCopy}>Copy</Text>
                 </TouchableOpacity>)}
             </View>
           </View>

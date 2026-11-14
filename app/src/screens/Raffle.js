@@ -5,7 +5,7 @@ import { chat, useChat } from '../chat';
 import { Btn, Header, Empty, timeLabel, toast, showError, s as ui } from '../components';
 import { C, themed } from '../theme';
 import { usePlayerSearch, SearchStatus } from './Premier';
-import { Avatar } from '../components';
+import { Avatar, DartsmindName } from '../components';
 
 // What a player sees before staff let them in.
 export function RaffleGate({ header }) {
@@ -69,7 +69,7 @@ export function RaffleStaffBar() {
                 {found.map(u => (
                   <View key={u.id} style={styles.row}>
                     <Avatar user={u} size={30} />
-                    <View style={{ flex: 1 }}><Text style={styles.name}>{u.name}</Text>{!!u.dartsmind && <Text style={styles.sub}>🎯 {u.dartsmind}</Text>}</View>
+                    <View style={{ flex: 1 }}><Text style={styles.name}>{u.name}</Text>{!!u.dartsmind && <DartsmindName name={u.dartsmind} size={14} style={styles.sub} />}</View>
                     {statusOf(u.id) === 'approved' ? <Text style={styles.sub}>✅ Has access</Text> : <Btn small kind="pri" title="Give access" onPress={() => grant(u)} />}
                   </View>))}
               </>}

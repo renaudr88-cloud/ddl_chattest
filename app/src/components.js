@@ -28,6 +28,16 @@ export function Avatar({ user, size = 36, onPress }) {
   return onPress ? <TouchableOpacity onPress={onPress} accessibilityLabel={user?.name}>{body}</TouchableOpacity> : body;
 }
 
+// "<Dartsmind logo> name": a player's Dartsmind name with the Dartsmind logo in front.
+const DM_LOGO = require('../assets/dartsmind.png');
+export function DartsmindName({ name, size = 16, style, bold }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
+      <Image source={DM_LOGO} style={{ width: size, height: size, borderRadius: size * 0.22 }} accessibilityLabel="Dartsmind" />
+      <Text style={[style, bold && { fontWeight: '900' }, { flexShrink: 1 }]} numberOfLines={1}>{name}</Text>
+    </View>);
+}
+
 // Platform logo (Dartsmind, Scolia, ...). Without an approved logo: initial on the platform colour.
 export function PlatformLogo({ platform, size = 24 }) {
   if (platform.logo) return <Image source={platform.logo} style={{ width: size, height: size, borderRadius: size * 0.22 }} accessibilityIgnoresInvertColors />;

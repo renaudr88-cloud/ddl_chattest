@@ -6,7 +6,7 @@ import { chat, useChat, listHere, RAFFLE_PLATFORM, mentionCount, visibleDms } fr
 import { BlockedList } from './Report';
 import { InstallBar, InstallGuide } from './Install';
 import { PLATFORMS, platformInfo } from '../platforms';
-import { Btn, Header, clock, showError, toast, PlatformLogo, RoomPicker } from '../components';
+import { Btn, Header, clock, showError, toast, PlatformLogo, RoomPicker, DartsmindName } from '../components';
 import { RaffleGate, RaffleStaffBar } from './Raffle';
 import { OpenTournaments } from './Tournaments';
 import { PremierStaffBar } from './Premier';
@@ -236,7 +236,7 @@ function DartsmindBar({ other }) {
   };
   return (
     <View style={styles.dmBar}>
-      <Text style={styles.dmBarTxt} numberOfLines={1}>🎯 Dartsmind: <Text style={{ fontWeight: '900' }}>{name}</Text></Text>
+      <View style={{ flex: 1 }}><DartsmindName name={name} size={22} bold style={[styles.dmBarTxt, { flex: 0 }]} /></View>
       <TouchableOpacity onPress={copy} style={styles.copyBtn} accessibilityRole="button" accessibilityLabel={'Copy Dartsmind name ' + name}>
         <Text style={styles.copyTxt}>Copy</Text>
       </TouchableOpacity>

@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, TextInput, ScrollView, Modal, Pressable, TouchableOpacity } from 'react-native';
 import { chat, useChat } from '../chat';
-import { Avatar, Btn, toast, showError, s as ui } from '../components';
+import { Avatar, Btn, DartsmindName, toast, showError, s as ui } from '../components';
 import { C, themed } from '../theme';
 
 // Search all DDL players (ddl-online.com, php/chat-search.php) while staff type: 2+ letters.
@@ -64,7 +64,7 @@ export function PremierStaffBar() {
                   <Avatar user={u} size={32} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.name}>{u.name}</Text>
-                    {!!u.dartsmind && <Text style={styles.sub}>🎯 {u.dartsmind}</Text>}
+                    {!!u.dartsmind && <DartsmindName name={u.dartsmind} size={14} style={styles.sub} />}
                   </View>
                   {isIn(u.id) ? <Text style={styles.sub}>✅ In</Text> : <Btn small kind="pri" title="Add" onPress={() => add(u)} />}
                 </View>))}

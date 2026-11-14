@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, TextInput, Image, Linking } from 'react-native';
 import { chat, useChat, visibleDms } from '../chat';
-import { Avatar, Header, Empty, RoleTag, Btn, timeLabel, s as ui, showError, toast } from '../components';
+import { Avatar, Header, Empty, RoleTag, Btn, DartsmindName, timeLabel, s as ui, showError, toast } from '../components';
 import { C, R, themed } from '../theme';
 import { usePlayerSearch, SearchStatus } from './Premier';
 
@@ -41,7 +41,7 @@ export default function MessagesScreen({ onOpen }) {
                 <Avatar user={u} />
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><Text style={styles.name}>{u.name}</Text><RoleTag user={u} /></View>
-                  {!!u.dartsmind && <Text style={styles.sub}>🎯 {u.dartsmind}</Text>}
+                  {!!u.dartsmind && <DartsmindName name={u.dartsmind} size={14} style={styles.sub} />}
                 </View>
                 {u.online && <View style={styles.dot} />}
               </TouchableOpacity>)} />
