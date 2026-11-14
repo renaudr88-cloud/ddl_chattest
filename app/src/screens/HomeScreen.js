@@ -16,6 +16,7 @@ import HelpScreen from './HelpScreen';
 import AdminScreen from './AdminScreen';
 import MemberSheet from './MemberSheet';
 import Welcome, { welcomeSeen } from './Welcome';
+import { soundOn, setSound } from '../sound';
 
 const TABS = [
   ['chat', '#', 'Chat'],
@@ -79,6 +80,10 @@ export default function HomeScreen() {
   const unreadOn = p => st.dms.filter(d => d.platform === p && chat.unread(d)).length;
   const openHelpOn = p => isAdmin ? (st.help[p] || []).filter(h => h.status === 'open').length : 0;
   const unreadDMs = unreadOn(st.platform);
+  // Web: "(3) DDL Chat" in the browser tab when something is waiting for me.
+  const waiting = PLATFORMS.reduce((n, p) => n + unreadOn(p.key), 0) + (st.noticesUnread || 0)
+    + PLATFORMS.reduce((n, p) => n + ['general', 'tournament', 'raffle'].reduce((k, r) => k + mentionCount(st, `${r}:${p.key}`), 0), 0);
+  if (Platform.OS === 'web' && typeof document !== 'undefined') document.title = (waiting ? `(${waiting}) ` : '') + 'DDL Chat';
   const openHelp = openHelpOn(st.platform);
   const switchPlatform = p => { setDm(null); chat.setPlatform(p); };
 
@@ -212,6 +217,21 @@ function DartsmindBar({ other }) {
   );
 }
 
+// Settings: sound on or off (a ping for private messages, @tags and website notifications).
+function SoundSwitch() {
+  const [on, setOn] = useState(soundOn());
+  const flip = () => { setSound(!on); setOn(!on); };
+  return (
+    <TouchableOpacity onPress={flip} style={styles.switchRow} accessibilityRole="switch" accessibilityState={{ checked: on }}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.label}>Sound</Text>
+        <Text style={{ color: C.muted, fontSize: 13 }}>A ping for private messages, @tags and DDL notifications</Text>
+      </View>
+      <View style={[styles.switch, on && styles.switchOn]}><View style={[styles.knob, on && { alignSelf: 'flex-end' }]} /></View>
+    </TouchableOpacity>
+  );
+}
+
 // Settings: app background (DDL blue or white) + log out. The choice is saved on the phone.
 function Settings({ visible, theme, me, onClose, onModeration, onHelp }) {
   return (
@@ -240,6 +260,7 @@ function Settings({ visible, theme, me, onClose, onModeration, onHelp }) {
                 </TouchableOpacity>);
             })}
           </View>
+          <SoundSwitch />
           <Btn title="How the chat works" onPress={onHelp} />
           <Btn title="Log out" onPress={() => { onClose(); chat.logout(); }} />
           <Btn title="Close" kind="ghost" onPress={onClose} />
@@ -253,6 +274,10 @@ const styles = themed(C => ({
   match: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: C.orange + '22', borderBottomWidth: 1, borderBottomColor: C.orange },
   matchSub: { color: C.muted, fontSize: 12 },
   matchTxt: { color: C.fg, fontSize: 15 },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  switch: { width: 52, height: 30, borderRadius: 15, backgroundColor: C.line, padding: 3, justifyContent: 'center' },
+  switchOn: { backgroundColor: C.orange },
+  knob: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#fff' },
   dmBar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: C.navy2 },
   dmBarTxt: { color: C.white, fontSize: 14, flex: 1 },
   copyBtn: { backgroundColor: C.orange, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 6 },

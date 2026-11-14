@@ -17,6 +17,7 @@ import { TEST_MODE, LOGIN_URL, UPLOAD_URL } from './config';
 import { PLATFORMS } from './platforms';
 import { hasBad, isQuestion } from './filter';
 import { toast } from './components';
+import { ping, visible } from './sound';
 
 const TOKEN_KEY = 'ddl-chat-token';       // DDL token for picture uploads (live mode)
 const READ_KEY = 'ddl-chat-read';
@@ -135,7 +136,7 @@ class ChatClient {
     this.stopAll();
     try { await signOut(auth); } catch {}
     await AsyncStorage.removeItem(TOKEN_KEY).catch(() => {});
-    this.older = {}; this.cursor = {}; this.live = {}; this.noticesAt = 0; this.players = null;
+    this.older = {}; this.cursor = {}; this.live = {}; this.noticesAt = 0; this.players = null; this.dmsSeen = null; this.noticeTop = undefined;
     this.set({ ...initial, status: 'idle', platform: this.state.platform, read: this.state.read });
   }
 
@@ -193,7 +194,13 @@ class ChatClient {
   async loadNotices() {
     if (TEST_MODE) return;
     this.noticesAt = Date.now();
-    try { const r = await this.site('chat-notifications.php'); this.set({ notices: r.list || [], noticesUnread: r.unread || 0 }); } catch {}
+    try {
+      const r = await this.site('chat-notifications.php');
+      const newest = r.list?.[0]?.id || 0;
+      if (this.noticeTop !== undefined && newest > this.noticeTop && r.unread) ping();   // a new notification from the website
+      this.noticeTop = newest;
+      this.set({ notices: r.list || [], noticesUnread: r.unread || 0 });
+    } catch {}
   }
   // A player from the website, also when they never opened the chat: name, photo and Dartsmind name.
   async player(id) {
@@ -271,6 +278,11 @@ class ChatClient {
         const x = d.data(), otherId = x.members.find(m => m !== this.uid) || this.uid;
         return { room: d.id, platform: x.platform, other: { id: otherId, ...(x.users?.[otherId] || { name: 'Player', role: 'player' }) }, lastAt: ms(x.lastAt), lastBy: x.lastBy };
       }).sort((a, b) => b.lastAt - a.lastAt);
+      // Ping for a new private message, unless that chat is open in front of me.
+      if (this.dmsSeen) for (const d of dms) {
+        if (d.lastBy !== this.uid && d.lastAt > (this.dmsSeen[d.room] || 0) && !(d.room === this.activeRoom && visible())) { ping(); break; }
+      }
+      this.dmsSeen = Object.fromEntries(dms.map(d => [d.room, d.lastAt]));
       this.set({ dms });
     }, onErr));
 
@@ -311,6 +323,11 @@ class ChatClient {
       this.sub('room:' + room, onSnapshot(q, s => {
         // A message that drops out of the live window because a new one arrived is kept as "older".
         const added = s.docChanges().some(c => c.type === 'added');
+        // Ping when someone tags me in a chat I am not looking at.
+        if (!first && !(room === this.activeRoom && visible())) for (const c of s.docChanges()) {
+          const x = c.type === 'added' && !c.doc.metadata.hasPendingWrites && c.doc.data();
+          if (x && x.uid !== this.uid && (x.mentions || []).some(t => t.id === this.uid)) { ping(); break; }
+        }
         for (const c of s.docChanges()) {
           if (c.type === 'removed' && added && !first) {
             this.older[room] = [...(this.older[room] || []), this.outMsg(c.doc, room)].sort((a, b) => a.ts - b.ts);
