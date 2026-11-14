@@ -158,7 +158,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
         </View>}
         <View style={styles.row}>
           {CAN_UPLOAD && <TouchableOpacity style={styles.icon} onPress={pick} disabled={muted} accessibilityLabel="Add a picture"><Text style={{ fontSize: 20 }}>📷</Text></TouchableOpacity>}
-          {group && <TouchableOpacity style={styles.icon} onPress={() => setPollOpen(true)} disabled={muted} accessibilityLabel="New poll"><Text style={{ fontSize: 20 }}>📊</Text></TouchableOpacity>}
+          {group && admin && <TouchableOpacity style={styles.icon} onPress={() => setPollOpen(true)} disabled={muted} accessibilityLabel="New poll"><Text style={{ fontSize: 20 }}>📊</Text></TouchableOpacity>}
           <TextInput style={styles.input} value={text} onChangeText={onType} multiline maxLength={1000} editable={!muted}
             placeholder={room.startsWith('dm:') ? 'Write a private message…' : 'Message… type @ to tag a player'} placeholderTextColor={C.muted} />
           <TouchableOpacity style={[styles.send, (muted || sending) && { opacity: 0.45 }]} onPress={send} disabled={muted || sending}>

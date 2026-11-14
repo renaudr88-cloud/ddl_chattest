@@ -130,8 +130,8 @@ service cloud.firestore {
       allow read: if canRead() && roomOk(room) && roomAccess(room);
       allow create: if canPost() && roomOk(room) && roomAccess(room) && !blockedByOther(room)
         && request.resource.data.keys().hasOnly(['uid', 'name', 'role', 'avatar', 'text', 'imageUrl', 'mentions', 'tournament', 'reply', 'poll', 'ts'])
-        // A poll (group chats only): a question and 2 to 6 answers. Votes come later, one per player.
-        && (!('poll' in request.resource.data) || (room.split(':')[0] != 'dm' && pollOk(request.resource.data.poll)))
+        // A poll (staff, group chats only): a question and 2 to 6 answers. Everyone votes, one vote per player.
+        && (!('poll' in request.resource.data) || (isAdmin() && room.split(':')[0] != 'dm' && pollOk(request.resource.data.poll)))
         // Reply to another message: a short quote of it.
         && (!('reply' in request.resource.data) || (request.resource.data.reply is map
             && request.resource.data.reply.keys().hasOnly(['id', 'name', 'text'])

@@ -4,11 +4,11 @@
     "slug": "ddl-chat",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/ddl-logo.png",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#011E51",
     "splash": {
-      "image": "./assets/ddl-logo.png",
+      "image": "./assets/icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#011E51"
     },
@@ -21,12 +21,12 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/ddl-logo.png",
+        "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#011E51"
       }
     },
     "web": {
-      "favicon": "./assets/ddl-logo.png"
+      "favicon": "./assets/icon.png"
     }
   }
 }

@@ -119,7 +119,7 @@ class ChatClient {
     try {
       const snap = await getDoc(doc(db, 'users', user.uid));
       if (!snap.exists()) { await signOut(auth); return false; }
-      await this.start(snap.data().name);
+      await this.start(snap.data().name, true);
       return true;
     } catch { this.set({ status: 'offline' }); return true; }
   }
@@ -165,19 +165,21 @@ class ChatClient {
   }
 
   /* ---------- start: profile + live data ---------- */
-  async start(name) {
+  async start(name, known = false) {
     this.set({ status: 'connecting' });
     this.name = name;
     this.uid = auth.currentUser.uid;
     if (!this.appSub) this.appSub = AppState.addEventListener('change', s => { if (s === 'active' && this.uid && this.state.status !== 'idle') this.heartbeat(); });
     try {
-      const claims = (await auth.currentUser.getIdTokenResult()).claims;
+      const [claims, staffDoc] = await Promise.all([
+        auth.currentUser.getIdTokenResult().then(r => r.claims),
+        getDoc(doc(db, 'staff', this.uid)).then(s => s.exists()).catch(() => false),
+      ]);
       this.ddlAdmin = claims.ddlRole === 'admin';   // admin on ddl-online.com: can also make chat staff
-      let admin = this.ddlAdmin;
-      if (!admin) { try { admin = (await getDoc(doc(db, 'staff', this.uid))).exists(); } catch {} }
-      this.role = admin ? 'admin' : 'player';
+      this.role = this.ddlAdmin || staffDoc ? 'admin' : 'player';
       this.avatar = claims.ddlPhoto || null;   // profile photo from the DDL website (DDL login only)
-      await this.saveProfile();
+      // A returning player already has a profile: update it in the background instead of waiting for it.
+      if (known) this.saveProfile().catch(() => {}); else await this.saveProfile();
       this.set({ me: { id: this.uid, name: this.name, role: this.role, ddlAdmin: this.ddlAdmin, avatar: this.avatar, sanction: sanctionFrom(null) } });
       this.connect();
     } catch (e) {
@@ -665,6 +667,7 @@ class ChatClient {
       if (!q) fail('bad_input', 'Write a question.');
       if (options.length < 2 || options.length > 6) fail('bad_input', 'Give 2 to 6 answers.');
       if (room.startsWith('dm:')) fail('bad_input', 'Polls are for the group chats.');
+      if (this.role !== 'admin') fail('forbidden', 'Only DDL staff can start a poll.');
       this.canPost(q + ' ' + options.join(' '));
       const msg = { ...this.mine(), text: '📊 ' + q, imageUrl: null, poll: { q, options }, ts: serverTimestamp() };
       await setDoc(doc(collection(db, 'rooms', room, 'messages')), msg);
