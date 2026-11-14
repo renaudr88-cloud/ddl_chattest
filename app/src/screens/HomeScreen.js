@@ -79,6 +79,12 @@ export default function HomeScreen() {
   const chatWith = async user => {
     try { const r = await chat.requestHere('dm.open', { userId: user.id }); openDM(r.room, r.other); } catch (e) { showError(e); }
   };
+  // Challenge from the player card: a private message inviting them to a friendly, then open that chat.
+  const challenge = async user => {
+    const r = await chat.requestHere('dm.open', { userId: user.id });
+    await chat.request('send', { room: r.room, text: `🎯 Friendly challenge! Fancy a game? Reply here and we'll set it up.` });
+    openDM(r.room, r.other);
+  };
   // onUser(user, true) jumps straight into a private chat; onUser(user) opens the player card
   const onUser = (user, direct) => (direct ? chatWith(user) : setSheet(user));
   const isAdmin = st.me?.role === 'admin';
@@ -171,7 +177,7 @@ export default function HomeScreen() {
           })}
         </View>
       )}
-      {sheet && <MemberSheet user={sheet} onClose={() => setSheet(null)} onChat={chatWith} />}
+      {sheet && <MemberSheet user={sheet} onClose={() => setSheet(null)} onChat={chatWith} onChallenge={challenge} />}
       <Settings visible={settings} theme={theme} me={st.me} onClose={() => setSettings(false)} onModeration={() => { setSettings(false); setAdmin(true); }}
         onHelp={() => { setSettings(false); setWelcome(true); }} />
       <Welcome visible={welcome} onClose={() => setWelcome(false)} />

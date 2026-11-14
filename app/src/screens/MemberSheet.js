@@ -1,25 +1,32 @@
-// Tap any player: private chat. Staff see every action they can take on that player in one place:
+// Tap any player: the player card (numbers from ddl-online.com: average, rankings, best checkout, league place,
+// form, badges), private chat and a friendly challenge. Staff also see every action they can take on that player:
 // group chats (Premier League, Raffle), moderation (mute / kick / ban), chat staff, and the website pages.
 import { useEffect, useState } from 'react';
-import { View, Text, Modal, Pressable, ScrollView, Linking, StyleSheet } from 'react-native';
+import { View, Text, Modal, Pressable, ScrollView, Linking, Image, TouchableOpacity } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { chat, useChat } from '../chat';
 import { Avatar, Btn, ConfirmBtn, RoleTag, toast, showError, s as ui } from '../components';
 import { statusOf } from './AdminScreen';
-import { LOGIN_URL } from '../config';
+import { LOGIN_URL, TEST_MODE } from '../config';
 import { C, themed } from '../theme';
 
 const siteUrl = file => LOGIN_URL.replace('chat-login.php', file);
 
-export default function MemberSheet({ user, onClose, onChat }) {
+export default function MemberSheet({ user, onClose, onChat, onChallenge }) {
   const st = useChat();
   const [staff, setStaff] = useState(null);   // is this player chat staff (made by a DDL admin)?
   const [busy, setBusy] = useState('');
   const ddlUser = !!user && String(user.id).startsWith('ddl-');
   const ddlAdmin = !!st.me?.ddlAdmin && !!user && user.id !== st.me?.id && ddlUser;
+  const [card, setCard] = useState(undefined);   // undefined = loading, null = not available
   useEffect(() => {
     setStaff(null);
     if (ddlAdmin) chat.request('staff.get', { userId: user.id }).then(r => setStaff(r.staff)).catch(() => {});
   }, [user?.id, ddlAdmin]);
+  useEffect(() => {
+    setCard(ddlUser && !TEST_MODE ? undefined : null);
+    if (ddlUser && !TEST_MODE) chat.request('player.profile', { id: user.id }).then(r => setCard(r.profile)).catch(() => setCard(null));
+  }, [user?.id, ddlUser]);
   if (!user) return null;
   const member = st.members.find(m => m.id === user.id) || user;
   const s = statusOf(member.sanction);
@@ -35,8 +42,11 @@ export default function MemberSheet({ user, onClose, onChat }) {
 
   const run = async (key, fn, done) => {
     setBusy(key);
-    try { await fn(); toast(done); } catch (e) { showError(e); }
+    try { await fn(); if (done) toast(done); } catch (e) { showError(e); }
     setBusy('');
+  };
+  const copy = async name => {
+    try { await Clipboard.setStringAsync(name); toast(`Copied: ${name}`); } catch { toast('Could not copy. Name: ' + name, true); }
   };
 
   const mod = async (action, minutes) => {
@@ -60,15 +70,31 @@ export default function MemberSheet({ user, onClose, onChat }) {
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.scrim} onPress={onClose}>
         <Pressable style={styles.sheet} onPress={() => {}}>
-          <ScrollView contentContainerStyle={{ gap: 12 }} showsVerticalScrollIndicator={false}>
-            <View style={ui.row}>
-              <Avatar user={user} size={48} />
-              <View style={{ flex: 1 }}>
-                <View style={ui.row}><Text style={styles.name}>{user.name}</Text><RoleTag user={user} /></View>
-                <Text style={{ color: C.muted }}>{user.role === 'admin' ? 'DDL staff' : 'Player'}{member.sanction ? ' · ' + s.label : ''}</Text>
-              </View>
+          <View style={styles.hero}>
+            <View style={styles.heroAv}><Avatar user={user} size={70} /></View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <View style={[ui.row, { flexWrap: 'wrap' }]}><Text style={styles.name} numberOfLines={2}>{user.name}</Text><RoleTag user={user} /></View>
+              <Text style={styles.heroSub} numberOfLines={1}>
+                {[card?.countryName && flag(card.country) + ' ' + card.countryName, card?.hometown].filter(Boolean).join(' · ')
+                  || (user.role === 'admin' ? 'DDL staff' : 'Player')}{member.sanction ? ' · ' + s.label : ''}
+              </Text>
+              {!!card?.dartsmind && (
+                <TouchableOpacity style={styles.dm} onPress={() => copy(card.dartsmind)} accessibilityLabel={'Copy Dartsmind name ' + card.dartsmind}>
+                  <Text style={styles.dmTxt} numberOfLines={1}>🎯 {card.dartsmind}</Text><Text style={styles.dmCopy}>Copy</Text>
+                </TouchableOpacity>)}
             </View>
-            {!self && <Btn kind="pri" title="Private chat" onPress={() => onChat(user)} />}
+          </View>
+          <ScrollView contentContainerStyle={{ gap: 12, padding: 16, paddingBottom: 30 }} showsVerticalScrollIndicator={false}>
+            {card === undefined && <Text style={{ color: C.muted, textAlign: 'center', paddingVertical: 8 }}>Loading stats from ddl-online.com…</Text>}
+            {!!card && <PlayerStats card={card} />}
+            {!self && <Btn kind="pri" title="💬 Private chat" onPress={() => onChat(user)} />}
+            {!self && (onChallenge || card?.profileUrl) && (
+              <View style={styles.grid}>
+                {onChallenge && <Btn title="🤝 Challenge" style={styles.cell} loading={busy === 'ch'}
+                  onPress={() => run('ch', () => onChallenge(user), `Challenge sent to ${user.name}.`)} />}
+                {!!card?.profileUrl && <Btn title="👤 Full profile ↗" style={styles.cell} onPress={() => Linking.openURL(card.profileUrl)} />}
+              </View>)}
+            {self && !!card?.profileUrl && <Btn title="👤 My full profile ↗" onPress={() => Linking.openURL(card.profileUrl)} />}
 
             {isStaffMe && !self && <>
               <Text style={styles.section}>Group chats · Dartsmind</Text>
@@ -121,12 +147,9 @@ export default function MemberSheet({ user, onClose, onChat }) {
                   : <Text style={styles.lineSub}>Admin on the DDL website: always staff in the chat.</Text>}
             </>}
 
-            {isStaffMe && siteId !== '' && <>
+            {st.me?.ddlAdmin && !self && siteId !== '' && <>
               <Text style={styles.section}>DDL website</Text>
-              <View style={styles.grid}>
-                <Btn small title="Player profile ↗" style={styles.cell} onPress={() => Linking.openURL(siteUrl('player-card.php?id=' + siteId))} />
-                {st.me?.ddlAdmin && <Btn small title="Edit player ↗" style={styles.cell} onPress={() => Linking.openURL(siteUrl('edit-player.php?id=' + siteId))} />}
-              </View>
+              <Btn small title="Edit player on the website ↗" onPress={() => Linking.openURL(siteUrl('edit-player.php?id=' + siteId))} />
             </>}
 
             <Btn title="Close" onPress={onClose} />
@@ -137,10 +160,79 @@ export default function MemberSheet({ user, onClose, onChat }) {
   );
 }
 
+// 🇧🇪 from "be"; England/Scotland/Wales get their own flags.
+function flag(cc) {
+  if (!cc) return '';
+  const sub = { 'gb-eng': '🏴󠁧󠁢󠁥󠁮󠁧󠁿', 'gb-sct': '🏴󠁧󠁢󠁳󠁣󠁴󠁿', 'gb-wls': '🏴󠁧󠁢󠁷󠁬󠁳󠁿' }[cc];
+  if (sub) return sub;
+  const c = cc.slice(0, 2).toUpperCase();
+  return /^[A-Z]{2}$/.test(c) ? String.fromCodePoint(...[...c].map(x => 0x1F1E6 + x.charCodeAt(0) - 65)) : '';
+}
+const ordinal = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+
+function PlayerStats({ card }) {
+  const tiles = [
+    card.average != null && [card.average.toFixed(1), 'Average'],
+    ...card.ranks.slice(0, 2).map(r => ['#' + r.pos, r.label]),
+    card.bestCheckout && [String(card.bestCheckout), 'Best CO'],
+  ].filter(Boolean).slice(0, 4);
+  const lg = card.league;
+  return <>
+    {tiles.length > 0 && (
+      <View style={styles.tiles}>
+        {tiles.map(([v, l]) => (
+          <View key={l} style={styles.tile}><Text style={styles.tileVal}>{v}</Text><Text style={styles.tileLbl}>{l}</Text></View>))}
+      </View>)}
+    {!!lg && (
+      <View style={styles.league}>
+        <Text style={{ fontSize: 22 }}>🏅</Text>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.leagueName} numberOfLines={1}>{lg.name}{lg.group ? ' · ' + lg.group : ''}</Text>
+          <Text style={styles.leagueSub} numberOfLines={1}>
+            {[lg.season && 'Season ' + lg.season, lg.pts != null && lg.pts + ' pts', lg.diff != null && (lg.diff > 0 ? '+' + lg.diff : String(lg.diff))].filter(Boolean).join(' · ')}
+          </Text>
+        </View>
+        {lg.pos != null && <View style={{ alignItems: 'flex-end' }}><Text style={styles.leaguePos}>{ordinal(lg.pos)}</Text><Text style={styles.leagueSub}>of {lg.size}</Text></View>}
+      </View>)}
+    {card.form.length > 0 && (
+      <View style={styles.lineRow}>
+        <Text style={[styles.section, { marginTop: 0 }]}>Form</Text>
+        <View style={{ flexDirection: 'row', gap: 4 }}>
+          {card.form.map((r, i) => <View key={i} style={[styles.form, { backgroundColor: r === 'W' ? '#16a34a' : '#dc2626' }]}><Text style={styles.formTxt}>{r}</Text></View>)}
+        </View>
+      </View>)}
+    {card.badges.length > 0 && (
+      <View style={styles.lineRow}>
+        <Text style={[styles.section, { marginTop: 0 }]}>Badges</Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end', flex: 1, marginLeft: 12 }}>
+          {card.badges.map(b => <Image key={b.img} source={{ uri: b.img }} style={{ width: 40, height: 40 }} accessibilityLabel={b.name} />)}
+        </View>
+      </View>)}
+  </>;
+}
+
 const styles = themed(C => ({
   scrim: { flex: 1, backgroundColor: 'rgba(1,10,30,0.6)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: C.panel, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 18, paddingBottom: 34, maxHeight: '88%' },
-  name: { color: C.fg, fontSize: 22, fontWeight: '900', textTransform: 'uppercase' },
+  sheet: { backgroundColor: C.panel, borderTopLeftRadius: 22, borderTopRightRadius: 22, overflow: 'hidden', maxHeight: '90%' },
+  hero: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16, paddingTop: 18, backgroundColor: C.navy2, borderBottomWidth: 3, borderBottomColor: C.orange },
+  heroAv: { borderWidth: 3, borderColor: C.orange, borderRadius: 40, padding: 1 },
+  name: { color: C.white, fontSize: 22, fontWeight: '900', textTransform: 'uppercase', flexShrink: 1 },
+  heroSub: { color: C.barMuted, fontSize: 13, marginTop: 3 },
+  dm: { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', marginTop: 7, backgroundColor: 'rgba(255,255,255,0.1)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', borderRadius: 99, paddingHorizontal: 11, paddingVertical: 4, maxWidth: '100%' },
+  dmTxt: { color: C.white, fontSize: 13, flexShrink: 1 },
+  dmCopy: { color: C.orangeSoft, fontSize: 13, fontWeight: '800' },
+  tiles: { flexDirection: 'row', gap: 8 },
+  tile: { flex: 1, backgroundColor: C.bg, borderWidth: 1, borderColor: C.line, borderRadius: 12, paddingVertical: 9, alignItems: 'center' },
+  tileVal: { color: C.orange, fontSize: 21, fontWeight: '900' },
+  tileLbl: { color: C.muted, fontSize: 9.5, fontWeight: '800', letterSpacing: 0.6, textTransform: 'uppercase', marginTop: 1 },
+  league: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.bg, borderWidth: 1, borderColor: C.line, borderRadius: 12, padding: 11 },
+  leagueName: { color: C.fg, fontSize: 14, fontWeight: '800' },
+  leagueSub: { color: C.muted, fontSize: 12 },
+  leaguePos: { color: C.orange, fontSize: 22, fontWeight: '900' },
+  lineRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  form: { width: 21, height: 21, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
+  formTxt: { color: '#fff', fontSize: 10, fontWeight: '900' },
   section: { color: C.muted, fontSize: 12, fontWeight: '800', letterSpacing: 1.2, textTransform: 'uppercase', marginTop: 6 },
   line: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.bg, borderRadius: 12, padding: 12 },
   lineTitle: { color: C.fg, fontSize: 15, fontWeight: '800' },

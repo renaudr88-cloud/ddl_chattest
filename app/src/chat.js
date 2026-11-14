@@ -558,6 +558,15 @@ class ChatClient {
     },
     async 'matches.mine'() { const r = await this.site('chat-matches.php'); return { list: r.list || [] }; },
     async 'player.get'({ id }) { return { user: await this.player(id) }; },
+    // The player card: numbers from ddl-online.com (php/chat-profile.php), kept 5 minutes.
+    async 'player.profile'({ id }) {
+      this.profiles ||= new Map();
+      const hit = this.profiles.get(id);
+      if (hit && Date.now() - hit.at < 5 * 60 * 1000) return { profile: hit.profile };
+      const r = await this.site('chat-profile.php?id=' + encodeURIComponent(String(id).replace(/^ddl-/, '')));
+      this.profiles.set(id, { at: Date.now(), profile: r.profile });
+      return { profile: r.profile };
+    },
     async 'notices.read'() {
       if (!this.state.noticesUnread) return;
       this.set(st => ({ noticesUnread: 0, notices: st.notices.map(n => ({ ...n, read: true })) }));
