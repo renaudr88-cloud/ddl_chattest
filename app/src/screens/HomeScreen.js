@@ -145,8 +145,8 @@ export default function HomeScreen() {
     } else {
       body = <ChatScreen key={r + st.platform} room={`${r}:${st.platform}`} title={info[0]} subtitle={info[1]} onUser={onUser} right={headerRight}
         below={<>{picker}{r === 'raffle' && isAdmin && <RaffleStaffBar />}{r === 'premier' && isAdmin && <PremierStaffBar />}
-          {r === 'tournament' && st.platform === 'dartsmind' && st.me?.id?.startsWith('ddl-') && <OpenTournaments staff={isAdmin} />}
-          {r === 'tournament' && st.platform === 'dartsmind' && <MyMatches onOpen={openDM} />}</>} />;
+          {r === 'tournament' && st.me?.id?.startsWith('ddl-') && <OpenTournaments staff={isAdmin} platform={st.platform} />}
+          {r === 'tournament' && <MyMatches onOpen={openDM} platform={st.platform} />}</>} />;
     }
   }
   else if (tab === 'messages') body = <MessagesScreen onOpen={openDM} />;
@@ -205,7 +205,7 @@ export default function HomeScreen() {
 
 // Tournament chat: "Your match: vs ..." for every open match of mine in the brackets on ddl-online.com,
 // with a button straight to a private chat (where the Dartsmind name is ready to copy).
-function MyMatches({ onOpen }) {
+function MyMatches({ onOpen, platform }) {
   const st = useChat();
   const [list, setList] = useState([]);
   useEffect(() => {
@@ -216,10 +216,10 @@ function MyMatches({ onOpen }) {
     return () => clearInterval(t);
   }, [st.me?.id]);
   const open = async m => {
-    try { const r = await chat.request('dm.player', { id: m.opponent.id, platform: 'dartsmind' }); onOpen(r.room, { ...r.other, ...m.opponent }); }
+    try { const r = await chat.request('dm.player', { id: m.opponent.id, platform }); onOpen(r.room, { ...r.other, ...m.opponent }); }
     catch (e) { showError(e); }
   };
-  return list.map(m => (
+  return list.filter(m => (m.platform || 'dartsmind') === platform).map(m => (
     <View key={m.match} style={styles.match}>
       <View style={{ flex: 1 }}>
         <Text style={styles.matchSub} numberOfLines={1}>🏆 {m.tournament}{m.round ? ` · Round ${m.round}` : ''}</Text>

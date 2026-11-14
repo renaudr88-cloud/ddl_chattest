@@ -53,14 +53,16 @@ export function TournamentCard({ tournament }) {
 
 // Tournament chat (Dartsmind): a bar "🏆 3 open tournaments" that is always there. Tap it for the list;
 // players sign up on the website from there, staff can also post one as a card in the chat.
-export function OpenTournaments({ staff }) {
+export function OpenTournaments({ staff, platform = 'dartsmind' }) {
   const [open, setOpen] = useState(false);
   const [list, setList] = useState(null);
-  const load = () => chat.request('tournaments.list').then(r => setList(r.list)).catch(() => setList(l => l || []));
-  useEffect(() => { load(); const t = setInterval(load, 5 * 60_000); return () => clearInterval(t); }, []);
+  // Only the tournaments of the platform this chat is for (Dartsmind or Scolia).
+  const load = () => chat.request('tournaments.list')
+    .then(r => setList(r.list.filter(t => (t.platform || 'dartsmind') === platform))).catch(() => setList(l => l || []));
+  useEffect(() => { setList(null); load(); const t = setInterval(load, 5 * 60_000); return () => clearInterval(t); }, [platform]);
   const show = () => { setOpen(true); load(); };
   const post = async t => {
-    try { await chat.request('tournament.post', { id: t.id, name: t.name }); setOpen(false); toast('Posted in the Tournament chat.'); }
+    try { await chat.request('tournament.post', { id: t.id, name: t.name, platform }); setOpen(false); toast('Posted in the Tournament chat.'); }
     catch (e) { showError(e); }
   };
   const n = list?.length || 0;

@@ -10,9 +10,11 @@ if (!$me) chat_json(401, ['error' => 'Log in again.']);
 $uid = (int)$me['uid'];
 $one = (int)($_GET['id'] ?? 0);
 
-try {
+// t.platform (Dartsmind or Scolia) when the website has that column; otherwise the same list without it.
+$rows = null;
+foreach (['t.platform AS platform,', ''] as $extra) try {
     $sql = "SELECT t.id, t.name, t.format, t.start_date, t.start_time, t.timezone, t.max_players, t.registration_open_days,
-                   t.min_avg, t.max_avg,
+                   t.min_avg, t.max_avg, $extra
                    (SELECT COUNT(*) FROM tournament_players WHERE tournament_id = t.id) AS players,
                    (SELECT COUNT(*) FROM tournament_reserve_list WHERE tournament_id = t.id) AS reserves,
                    EXISTS(SELECT 1 FROM tournament_players WHERE tournament_id = t.id AND player_id = ?) AS joined,
@@ -26,7 +28,9 @@ try {
     $st = chat_db()->prepare($sql);
     $st->execute($one ? [$uid, $uid, $one] : [$uid, $uid]);
     $rows = $st->fetchAll(PDO::FETCH_ASSOC);
+    break;
 } catch (Throwable $e) {
+    if ($extra !== '') continue;
     error_log('chat-tournaments: ' . $e->getMessage());
     chat_json(500, ['error' => 'Could not load the tournaments. Try again later.']);
 }
@@ -44,6 +48,7 @@ foreach ($rows as $t) {
     if (!$one && $closed) continue;
     $list[] = [
         'id' => (int)$t['id'],
+        'platform' => ($t['platform'] ?? '') === 'scolia' ? 'scolia' : 'dartsmind',
         'name' => (string)$t['name'],
         'format' => ucwords(str_replace('_', ' ', (string)$t['format'])),
         'start' => $start->getTimestamp() * 1000,
