@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />
     <title>DDL Chat</title>
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#011E51" />
@@ -29,6 +29,12 @@
         height: 100%;
         flex: 1;
       }
+      /* Phone: navy behind the clock/battery bar (no white strip), and the page itself never slides up or down.
+         The chat lists inside still scroll normally. */
+      html, body { background: #011E51; overscroll-behavior: none; }
+      html { overflow: hidden; }
+      body { position: fixed; top: 0; right: 0; bottom: 0; left: 0; margin: 0; }
+      #root { box-sizing: border-box; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
       /* iPhone zooms in on a text box with letters smaller than 16px: keep every input at 16px or more */
       input, textarea, select { font-size: max(16px, 1em) !important; }
     </style>
