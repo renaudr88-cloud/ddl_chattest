@@ -15,6 +15,8 @@ rules_version = '2';
 //   modlog/{id}                          staff actions
 //   premierMembers/{uid}                 Premier League chat (Dartsmind): players staff added {name, by, ts}
 //   staff/{uid}                          chat staff: made by a DDL admin {name, by, ts} (or test staff code)
+//   blocks/{uid}                         players this player blocked: { users: { <uid>: <name> } } (only they can read it)
+//   reports/{id}                         a player reports a player or message to staff: by, targetId, reason, status open|handled|dismissed
 //   config/staff                         test mode only: { code: "..." } (set in the console, unreadable for the app)
 //
 // Staff (admin): a DDL login with ddlRole "admin" in the token (made by php/chat-login.php),
@@ -84,6 +86,13 @@ service cloud.firestore {
     }
     // Premier League chat: only staff and the players staff put in it (premierMembers/{uid}).
     function premierMember() { return isAdmin() || exists(/databases/$(database)/documents/premierMembers/$(me())); }
+    // Private chats: the other player blocked me? Then I cannot send them messages.
+    function blockedByOther(room) {
+      let p = room.split(':');
+      let other = p.size() == 4 ? (p[2] == me() ? p[3] : p[2]) : '';
+      return p[0] == 'dm' && exists(/databases/$(database)/documents/blocks/$(other))
+        && me() in get(/databases/$(database)/documents/blocks/$(other)).data.get('users', {});
+    }
     function roomAccess(room) {
       let kind = room.split(':')[0];
       return (kind != 'raffle' || raffleApproved()) && (kind != 'premier' || premierMember());
@@ -106,7 +115,7 @@ service cloud.firestore {
     // ---------- messages ----------
     match /rooms/{room}/messages/{id} {
       allow read: if canRead() && roomOk(room) && roomAccess(room);
-      allow create: if canPost() && roomOk(room) && roomAccess(room)
+      allow create: if canPost() && roomOk(room) && roomAccess(room) && !blockedByOther(room)
         && request.resource.data.keys().hasOnly(['uid', 'name', 'role', 'avatar', 'text', 'imageUrl', 'mentions', 'tournament', 'reply', 'ts'])
         // Reply to another message: a short quote of it.
         && (!('reply' in request.resource.data) || (request.resource.data.reply is map
@@ -138,7 +147,7 @@ service cloud.firestore {
     // ---------- private chat list ----------
     match /dms/{room} {
       allow read: if canRead() && me() in resource.data.members;
-      allow create, update: if canPost() && roomOk(room) && room.split(':')[0] == 'dm'
+      allow create, update: if canPost() && roomOk(room) && room.split(':')[0] == 'dm' && !blockedByOther(room)
         && request.resource.data.members == [room.split(':')[2], room.split(':')[3]]
         && request.resource.data.platform == room.split(':')[1]
         && request.resource.data.lastBy == me()
@@ -224,6 +233,32 @@ service cloud.firestore {
             && request.resource.data.status in ['approved', 'declined', 'removed'] && request.resource.data.by == me())
         || (canPost() && uid == me() && resource.data.status in ['declined', 'removed']
             && changed().hasOnly(['status', 'ts']) && request.resource.data.status == 'pending' && request.resource.data.ts == request.time);
+    }
+
+    // ---------- block and report ----------
+    match /blocks/{uid} {
+      allow read: if signedIn() && uid == me();
+      allow create, update: if signedIn() && uid == me()
+        && request.resource.data.keys().hasOnly(['users']) && request.resource.data.users is map
+        && request.resource.data.users.size() <= 200;
+      allow delete: if signedIn() && uid == me();
+    }
+    match /reports/{id} {
+      allow read: if isAdmin();
+      allow create: if canRead()
+        && request.resource.data.keys().hasOnly(['by', 'byName', 'targetId', 'targetName', 'room', 'messageId', 'text', 'reason', 'note', 'status', 'ts'])
+        && request.resource.data.by == me() && request.resource.data.targetId != me()
+        && request.resource.data.byName is string && request.resource.data.byName.size() <= 30
+        && request.resource.data.targetId is string && request.resource.data.targetId.size() <= 60
+        && request.resource.data.targetName is string && request.resource.data.targetName.size() <= 30
+        && request.resource.data.room is string && request.resource.data.room.size() <= 80
+        && request.resource.data.messageId is string && request.resource.data.messageId.size() <= 60
+        && request.resource.data.text is string && request.resource.data.text.size() <= 300
+        && request.resource.data.note is string && request.resource.data.note.size() <= 300
+        && request.resource.data.reason in ['Spam', 'Insults or abuse', 'Cheating', 'Inappropriate picture', 'Other']
+        && request.resource.data.status == 'open' && request.resource.data.ts == request.time;
+      allow update: if isAdmin() && changed().hasOnly(['status', 'handledBy', 'handledAt'])
+        && request.resource.data.status in ['handled', 'dismissed'] && request.resource.data.handledBy == me();
     }
 
     // ---------- moderation ----------

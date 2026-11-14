@@ -1,7 +1,7 @@
 // Private chats list + start a new one.
 import { useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, TextInput, Image, Linking } from 'react-native';
-import { chat, useChat } from '../chat';
+import { chat, useChat, blockedSet } from '../chat';
 import { Avatar, Header, Empty, RoleTag, Btn, timeLabel, s as ui, showError } from '../components';
 import { C, R, themed } from '../theme';
 import { usePlayerSearch, SearchStatus } from './Premier';
@@ -47,7 +47,7 @@ export default function MessagesScreen({ onOpen }) {
               </TouchableOpacity>)} />
         </View>
       ) : (
-        <FlatList data={st.dms.filter(d => d.platform === st.platform)} keyExtractor={d => d.room}
+        <FlatList data={st.dms.filter(d => d.platform === st.platform && !blockedSet(st).has(d.other.id))} keyExtractor={d => d.room}
           ListHeaderComponent={showNotices && (
             <TouchableOpacity style={styles.row} onPress={() => setNotices(true)} accessibilityLabel="DDL notifications">
               <Image source={require('../../assets/ddl-logo.png')} style={{ width: 44, height: 44, borderRadius: 22 }} />

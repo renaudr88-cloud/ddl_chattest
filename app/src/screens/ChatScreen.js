@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, FlatList, TextInput, TouchableOpacity, Pressable, Modal, Image, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
-import { chat, useChat, isMuted, CAN_UPLOAD, REACTIONS } from '../chat';
+import { chat, useChat, isMuted, CAN_UPLOAD, REACTIONS, blockedSet } from '../chat';
+import { ReportSheet } from './Report';
 import { hasBad } from '../filter';
 import { Avatar, Header, Notice, RoleTag, Lightbox, Empty, timeLabel, clock, toast, showError } from '../components';
 import { C, R, themed, useTheme } from '../theme';
@@ -21,6 +22,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
   const [suggest, setSuggest] = useState([]); // names shown while typing @…
   const [menu, setMenu] = useState(null);     // message held down: react / reply / copy / delete
   const [reply, setReply] = useState(null);   // message I am answering
+  const [report, setReport] = useState(null); // {user, room, message} being reported
   const searchTimer = useRef(null);
   const list = st.rooms[room];
   const muted = isMuted(st.me);
@@ -33,7 +35,9 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
     return () => { if (chat.activeRoom === room) chat.activeRoom = null; };
   }, [room, st.status]);
 
-  const data = useMemo(() => (list ? [...list].reverse() : []), [list]);
+  // Messages from players I blocked are not shown.
+  const hide = useMemo(() => blockedSet(st), [st.blockedUsers]);
+  const data = useMemo(() => (list ? [...list].filter(m => !hide.has(m.user.id)).reverse() : []), [list, hide]);
 
   // People who recently talked here come first in the @ list; the rest is found by name.
   const recent = useMemo(() => {
@@ -163,7 +167,9 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
       <MessageMenu m={menu} onClose={() => setMenu(null)} canDelete={menu && (menu.user.id === st.me?.id || admin)} canReact={!muted}
         mine={menu?.reactions?.[st.me?.id]}
         onReact={e => { react(menu, e); setMenu(null); }} onReply={() => { setReply(menu); setMenu(null); }}
-        onDelete={() => { del(menu); setMenu(null); }} />
+        onDelete={() => { del(menu); setMenu(null); }}
+        onReport={menu && menu.user.id !== st.me?.id ? () => { setReport({ user: menu.user, room, message: menu }); setMenu(null); } : null} />
+      <ReportSheet target={report} onClose={() => setReport(null)} />
     </KeyboardAvoidingView>
   );
 }
@@ -185,7 +191,7 @@ function Reactions({ m, meId, onReact }) {
 }
 
 // Hold a message: react with one tap, reply, copy or delete.
-function MessageMenu({ m, onClose, onReact, onReply, onDelete, canDelete, canReact, mine }) {
+function MessageMenu({ m, onClose, onReact, onReply, onDelete, onReport, canDelete, canReact, mine }) {
   if (!m) return null;
   const copy = async () => { try { await Clipboard.setStringAsync(m.text); toast('Copied.'); } catch {} onClose(); };
   return (
@@ -202,6 +208,7 @@ function MessageMenu({ m, onClose, onReact, onReply, onDelete, canDelete, canRea
           {canReact && <MenuItem label="↩  Reply" onPress={onReply} />}
           {!!m.text && <MenuItem label="⧉  Copy text" onPress={copy} />}
           {canDelete && <MenuItem label="🗑  Delete" onPress={onDelete} danger />}
+          {!!onReport && <MenuItem label="🚩  Report to staff" onPress={onReport} danger />}
           <MenuItem label="Cancel" onPress={onClose} />
         </Pressable>
       </Pressable>

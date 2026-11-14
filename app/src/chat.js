@@ -46,7 +46,13 @@ const initial = {
   raffle: { status: null, requests: [] },
   premier: { member: false, members: [] },  // Premier League chat: am I in it; staff: everyone in it // my raffle access (null|pending|approved|declined|removed); staff: all requests
   blocked: null,           // {reason:'banned'|'kicked', until}
+  blockedUsers: [],        // players I blocked: [{id, name}] (blocks/{me}); their messages are hidden for me
+  reports: [],             // staff: open reports from players (reports/*)
 };
+
+// Players I blocked: their messages, private chats, friendlies and listings are hidden for me.
+export const blockedSet = st => new Set((st.blockedUsers || []).map(u => u.id));
+export const REPORT_REASONS = ['Spam', 'Insults or abuse', 'Cheating', 'Inappropriate picture', 'Other'];
 
 class Fail extends Error { constructor(code, message) { super(message); this.code = code; } }
 const fail = (code, message) => { throw new Fail(code, message); };
@@ -58,7 +64,7 @@ const roomPlatform = room => room.split(':')[1];
 const userOf = d => ({ id: d.uid, name: d.name || 'Unknown', role: d.role || 'player', avatar: d.avatar || null });
 function friendly(e) {
   const c = e?.code || '';
-  if (c === 'permission-denied') return new Fail(c, 'That is not allowed. If you are muted, you can only read.');
+  if (c === 'permission-denied') return new Fail(c, 'That is not allowed. If you are muted, you can only read. In a private chat: this player may not accept your messages.');
   if (c === 'unavailable') return new Fail(c, 'No connection. Check your internet and try again.');
   return e instanceof Fail ? e : new Fail(c || 'error', e?.message || 'Something went wrong. Try again.');
 }
@@ -261,6 +267,20 @@ class ChatClient {
       this.connect();
     }, () => {}));
 
+    // Players I blocked (only I can read or change this list).
+    this.sub('blocksMine', onSnapshot(doc(db, 'blocks', this.uid), s => {
+      const users = s.exists() ? s.data().users || {} : {};
+      this.set({ blockedUsers: Object.entries(users).map(([id, name]) => ({ id, name: String(name || 'Player') })) });
+    }, () => {}));
+    // Staff: open reports from players.
+    if (this.role === 'admin') {
+      this.sub('reports', onSnapshot(query(collection(db, 'reports'), where('status', '==', 'open'), limit(50)), s => {
+        const reports = s.docs.map(d => { const x = d.data({ serverTimestamps: 'estimate' }); return { id: d.id, ...x, ts: ms(x.ts) }; })
+          .sort((a, b) => b.ts - a.ts);
+        this.set({ reports });
+      }, onErr));
+    }
+
     // Premier League chat (Dartsmind): only players staff put in it, and staff. Invisible for everyone else.
     this.sub('premierMine', onSnapshot(doc(db, 'premierMembers', this.uid), s => {
       const member = s.exists();
@@ -298,7 +318,8 @@ class ChatClient {
       }).sort((a, b) => b.lastAt - a.lastAt);
       // Ping for a new private message, unless that chat is open in front of me.
       if (this.dmsSeen) for (const d of dms) {
-        if (d.lastBy !== this.uid && d.lastAt > (this.dmsSeen[d.room] || 0) && !(d.room === this.activeRoom && visible())) { ping(); break; }
+        if (d.lastBy !== this.uid && d.lastAt > (this.dmsSeen[d.room] || 0) && !(d.room === this.activeRoom && visible())
+          && !blockedSet(this.state).has(d.other.id)) { ping(); break; }
       }
       this.dmsSeen = Object.fromEntries(dms.map(d => [d.room, d.lastAt]));
       this.set({ dms });
@@ -558,6 +579,33 @@ class ChatClient {
     },
     async 'matches.mine'() { const r = await this.site('chat-matches.php'); return { list: r.list || [] }; },
     async 'player.get'({ id }) { return { user: await this.player(id) }; },
+    // Block / unblock a player for myself: their messages and private chats disappear for me,
+    // and they can no longer send me private messages (firestore.rules).
+    async block({ user, on }) {
+      if (!user?.id || user.id === this.uid) fail('bad_input', 'You cannot block yourself.');
+      const users = Object.fromEntries((this.state.blockedUsers || []).map(u => [u.id, u.name]));
+      if (on) {
+        if (Object.keys(users).length >= 200) fail('too_many', 'You blocked 200 players already. Unblock someone first.');
+        users[user.id] = String(user.name || 'Player').slice(0, 30);
+      } else delete users[user.id];
+      await setDoc(doc(db, 'blocks', this.uid), { users });
+    },
+    // Report a player or a message to DDL staff.
+    async report({ user, room, message, reason, note }) {
+      if (!user?.id || user.id === this.uid) fail('bad_input', 'You cannot report yourself.');
+      if (!REPORT_REASONS.includes(reason)) fail('bad_input', 'Choose a reason.');
+      await addDoc(collection(db, 'reports'), {
+        by: this.uid, byName: String(this.name || '').slice(0, 30),
+        targetId: user.id, targetName: String(user.name || 'Player').slice(0, 30),
+        room: String(room || '').slice(0, 80), messageId: message?.id ? String(message.id).slice(0, 60) : '',
+        text: message ? String(message.text || (message.imageUrl ? '📷 Picture' : '')).slice(0, 300) : '',
+        reason, note: String(note || '').trim().slice(0, 300), status: 'open', ts: serverTimestamp(),
+      });
+    },
+    async 'report.close'({ id, status }) {
+      if (this.role !== 'admin') fail('forbidden', 'Staff only.');
+      await updateDoc(doc(db, 'reports', id), { status: status === 'dismissed' ? 'dismissed' : 'handled', handledBy: this.uid, handledAt: serverTimestamp() });
+    },
     // The player card: numbers from ddl-online.com (php/chat-profile.php), kept 5 minutes.
     async 'player.profile'({ id }) {
       this.profiles ||= new Map();
@@ -753,4 +801,8 @@ export const mentionCount = (st, room) => (st.rooms[room] || []).filter(m =>
   m.user.id !== st.me?.id && m.ts > (st.read[room] || 0) && (m.mentions || []).some(x => x.id === st.me?.id)).length;
 
 // The list of friendlies / swap / help for the platform the player is looking at.
-export const listHere = (st, key) => st[key]?.[st.platform] || [];
+export const listHere = (st, key) => {
+  const list = st[key]?.[st.platform] || [];
+  const hide = blockedSet(st);
+  return hide.size ? list.filter(x => !x.user || !hide.has(x.user.id)) : list;
+};

@@ -2,7 +2,8 @@
 import { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Modal, Pressable, Linking, Platform } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import { chat, useChat, listHere, RAFFLE_PLATFORM, mentionCount } from '../chat';
+import { chat, useChat, listHere, RAFFLE_PLATFORM, mentionCount, blockedSet } from '../chat';
+import { BlockedList } from './Report';
 import { PLATFORMS, platformInfo } from '../platforms';
 import { Btn, Header, clock, showError, toast, PlatformLogo, RoomPicker } from '../components';
 import { RaffleGate, RaffleStaffBar } from './Raffle';
@@ -90,7 +91,7 @@ export default function HomeScreen() {
   const isAdmin = st.me?.role === 'admin';
   const here = platformInfo(st.platform);
   // Per platform: unread private chats, and open help questions for staff
-  const unreadOn = p => st.dms.filter(d => d.platform === p && chat.unread(d)).length;
+  const unreadOn = p => st.dms.filter(d => d.platform === p && chat.unread(d) && !blockedSet(st).has(d.other.id)).length;
   const openHelpOn = p => isAdmin ? (st.help[p] || []).filter(h => h.status === 'open').length : 0;
   const unreadDMs = unreadOn(st.platform);
   // Web: "(3) DDL Chat" in the browser tab when something is waiting for me.
@@ -103,7 +104,7 @@ export default function HomeScreen() {
   const headerRight = (
     <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
       <Text style={{ color: C.barMuted, fontSize: 12 }}>{st.online} online</Text>
-      {isAdmin && <TouchableOpacity onPress={() => setAdmin(true)} style={styles.staffBtn}><Text style={styles.staffTxt}>STAFF</Text></TouchableOpacity>}
+      {isAdmin && <TouchableOpacity onPress={() => setAdmin(true)} style={styles.staffBtn}><Text style={styles.staffTxt}>STAFF{st.reports?.length ? ` · 🚩${st.reports.length}` : ''}</Text></TouchableOpacity>}
       <TouchableOpacity onPress={() => setSettings(true)} hitSlop={8} accessibilityLabel="Settings"><Text style={{ color: C.white, fontSize: 20 }}>⚙</Text></TouchableOpacity>
     </View>
   );
@@ -111,7 +112,7 @@ export default function HomeScreen() {
   let body;
   if (dm) body = <ChatScreen room={dm.room} title={dm.other.name} subtitle={`Private chat · ${platformInfo(dm.room.split(':')[1]).name}${dm.other.role === 'admin' ? ' · DDL staff' : ''}`} onBack={() => { setDm(null); setTab('messages'); }} onUser={onUser}
     below={dm.room.split(':')[1] === 'dartsmind' && <DartsmindBar other={dm.other} />} />;
-  else if (admin) body = <AdminScreen onBack={() => setAdmin(false)} onUser={setSheet} />;
+  else if (admin) body = <AdminScreen onBack={() => setAdmin(false)} onUser={setSheet} startTab={admin === 'reports' ? 'reports' : undefined} />;
   else if (tab === 'chat') {
     const hasRaffle = st.platform === RAFFLE_PLATFORM;
     const hasPremier = st.platform === 'dartsmind' && (isAdmin || st.premier?.member);
@@ -160,6 +161,11 @@ export default function HomeScreen() {
         </View>
       )}
       {!dm && !admin && <PushBar me={st.me} />}
+      {!dm && !admin && isAdmin && st.reports?.length > 0 && (
+        <TouchableOpacity style={styles.reportBar} onPress={() => setAdmin('reports')} accessibilityRole="button">
+          <Text style={styles.reportTxt}>🚩 {st.reports.length} report{st.reports.length === 1 ? '' : 's'} from players waiting</Text>
+          <Text style={styles.reportTxt}>Review ›</Text>
+        </TouchableOpacity>)}
       <View style={{ flex: 1 }}>{body}</View>
       {!dm && !admin && (
         <View style={styles.tabs}>
@@ -342,6 +348,7 @@ function Settings({ visible, theme, me, onClose, onModeration, onHelp }) {
           </View>
           <SoundSwitch />
           <PushSwitch me={me} />
+          <BlockedList />
           <Btn title="How the chat works" onPress={onHelp} />
           <Btn title="Log out" onPress={() => { onClose(); chat.logout(); }} />
           <Btn title="Close" kind="ghost" onPress={onClose} />
@@ -358,6 +365,8 @@ const styles = themed(C => ({
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   pushBar: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: C.navy2, borderBottomWidth: 2, borderBottomColor: C.orange },
   pushTxt: { color: C.white, fontSize: 13, flex: 1 },
+  reportBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 9, backgroundColor: C.bad },
+  reportTxt: { color: C.white, fontWeight: '800', fontSize: 13 },
   switch: { width: 52, height: 30, borderRadius: 15, backgroundColor: C.line, padding: 3, justifyContent: 'center' },
   switchOn: { backgroundColor: C.orange },
   knob: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#fff' },

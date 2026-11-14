@@ -7,6 +7,7 @@ import * as Clipboard from 'expo-clipboard';
 import { chat, useChat } from '../chat';
 import { Avatar, Btn, ConfirmBtn, RoleTag, toast, showError, s as ui } from '../components';
 import { statusOf } from './AdminScreen';
+import { ReportSheet, BlockButton } from './Report';
 import { LOGIN_URL, TEST_MODE } from '../config';
 import { C, themed } from '../theme';
 
@@ -19,6 +20,7 @@ export default function MemberSheet({ user, onClose, onChat, onChallenge }) {
   const ddlUser = !!user && String(user.id).startsWith('ddl-');
   const ddlAdmin = !!st.me?.ddlAdmin && !!user && user.id !== st.me?.id && ddlUser;
   const [card, setCard] = useState(undefined);   // undefined = loading, null = not available
+  const [report, setReport] = useState(null);
   useEffect(() => {
     setStaff(null);
     if (ddlAdmin) chat.request('staff.get', { userId: user.id }).then(r => setStaff(r.staff)).catch(() => {});
@@ -95,6 +97,11 @@ export default function MemberSheet({ user, onClose, onChat, onChallenge }) {
                 {!!card?.profileUrl && <Btn title="👤 Full profile ↗" style={styles.cell} onPress={() => Linking.openURL(card.profileUrl)} />}
               </View>)}
             {self && !!card?.profileUrl && <Btn title="👤 My full profile ↗" onPress={() => Linking.openURL(card.profileUrl)} />}
+            {!self && (
+              <View style={styles.grid}>
+                <Btn kind="danger" title="🚩 Report" style={styles.cell} onPress={() => setReport({ user: { id: user.id, name: user.name } })} />
+                <BlockButton user={{ id: user.id, name: user.name }} style={styles.cell} />
+              </View>)}
 
             {isStaffMe && !self && <>
               <Text style={styles.section}>Group chats · Dartsmind</Text>
@@ -156,6 +163,7 @@ export default function MemberSheet({ user, onClose, onChat, onChallenge }) {
           </ScrollView>
         </Pressable>
       </Pressable>
+      <ReportSheet target={report} onClose={() => setReport(null)} />
     </Modal>
   );
 }

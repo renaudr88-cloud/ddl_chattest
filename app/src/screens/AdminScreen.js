@@ -4,6 +4,7 @@ import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet } from 'r
 import { chat, useChat } from '../chat';
 import { Avatar, Header, Chip, Segmented, Empty, RoleTag, timeLabel, clock, showError, s as ui } from '../components';
 import { C, themed } from '../theme';
+import { ReportsList } from './Report';
 
 export function statusOf(s) {
   const t = Date.now();
@@ -17,9 +18,10 @@ export function statusOf(s) {
 const ACTION = { mute: 'muted', unmute: 'unmuted', kick: 'kicked', unkick: 'let back in', ban: 'banned', unban: 'unbanned', delete: 'deleted a message from', swap_delete: 'deleted a listing from', friendly_delete: 'removed a friendly from', staff_add: 'made chat staff:', premier_add: 'put in the Premier League chat:', premier_remove: 'took out of the Premier League chat:', staff_remove: 'removed chat staff:',
   raffle_approved: 'let into the raffle chat:', raffle_declined: 'declined raffle access for', raffle_removed: 'removed from the raffle chat:' };
 
-export default function AdminScreen({ onBack, onUser }) {
+export default function AdminScreen({ onBack, onUser, startTab }) {
   const st = useChat();
-  const [tab, setTab] = useState('members');
+  const [tab, setTab] = useState(startTab || 'members');
+  const nReports = (st.reports || []).length;
   const [q, setQ] = useState('');
 
   useEffect(() => {
@@ -32,10 +34,10 @@ export default function AdminScreen({ onBack, onUser }) {
     <View style={{ flex: 1, backgroundColor: C.bg }}>
       <Header title="Moderation" subtitle={`${st.online} online now`} onBack={onBack} />
       <View style={{ padding: 14, gap: 10 }}>
-        <Segmented options={[['members', 'Members'], ['log', 'Log']]} value={tab} onChange={setTab} />
+        <Segmented options={[['members', 'Members'], ['reports', nReports ? `Reports (${nReports})` : 'Reports'], ['log', 'Log']]} value={tab} onChange={setTab} />
         {tab === 'members' && <TextInput style={ui.input} placeholder="Search members" placeholderTextColor={C.muted} value={q} onChangeText={setQ} />}
       </View>
-      {tab === 'members' ? (
+      {tab === 'reports' ? <ReportsList onUser={onUser} /> : tab === 'members' ? (
         <FlatList data={members} keyExtractor={m => m.id} ListEmptyComponent={<Empty text="No members yet." />}
           renderItem={({ item: m }) => {
             const s = statusOf(m.sanction);
