@@ -33,8 +33,11 @@
          The chat lists inside still scroll normally. */
       html, body { background: #011E51; overscroll-behavior: none; }
       html { overflow: hidden; }
-      body { position: fixed; top: 0; right: 0; bottom: 0; left: 0; margin: 0; }
-      #root { box-sizing: border-box; padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+      /* height: auto, so the body is as tall as the whole screen (top 0 to bottom 0). With height: 100% an installed
+         iPhone app came out one status bar too short, which left an empty band under the tab bar. */
+      body { position: fixed; top: 0; right: 0; bottom: 0; left: 0; margin: 0; height: auto; }
+      #root { box-sizing: border-box; height: 100%; padding-top: env(safe-area-inset-top);
+        padding-bottom: calc(env(safe-area-inset-bottom) * 0.55); }   /* just clear of the home bar, no big gap */
       /* iPhone zooms in on a text box with letters smaller than 16px: keep every input at 16px or more */
       input, textarea, select { font-size: max(16px, 1em) !important; }
     </style>
