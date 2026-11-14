@@ -1,6 +1,6 @@
 // General, tournament and raffle chat, and private chats (same screen, different room).
 // Type @ and a few letters to tag a player.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, FlatList, TextInput, TouchableOpacity, Pressable, Modal, Image, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as ImagePicker from 'expo-image-picker';
@@ -112,30 +112,11 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
   const del = m => chat.request('delete', { id: m.id }).catch(showError);
   const react = (m, emoji) => chat.request('react', { id: m.id, emoji }).catch(showError);
 
-  const renderItem = ({ item: m }) => {
-    const mine = m.user.id === st.me?.id;
-    const tagsMe = !mine && (m.mentions || []).some(x => x.id === st.me?.id);
-    return (
-      <View style={[styles.msg, mine && { flexDirection: 'row-reverse' }]}>
-        <Avatar user={m.user} onPress={() => onUser?.(m.user)} />
-        <Pressable onLongPress={() => setMenu(m)} delayLongPress={350} style={[styles.bub, mine ? styles.mine : styles.theirs, tagsMe && styles.tagged]}>
-          <View style={styles.meta}>
-            <TouchableOpacity onPress={() => onUser?.(m.user)}><Text style={styles.name}>{m.user.name}</Text></TouchableOpacity>
-            <RoleTag user={m.user} />
-            <Text style={styles.time}>{timeLabel(m.ts)}</Text>
-            {(mine || admin) && <TouchableOpacity onPress={() => del(m)} hitSlop={8}><Text style={styles.del}>Delete</Text></TouchableOpacity>}
-          </View>
-          {!!m.reply && <View style={styles.quote}><Text style={styles.quoteName}>{m.reply.name}</Text><Text style={styles.quoteTxt} numberOfLines={2}>{m.reply.text}</Text></View>}
-          {!!m.poll ? <PollCard m={m} meId={st.me?.id} canVote={!muted} />
-            : !!m.text && <Text style={styles.txt}>{withTags(m.text, m.mentions, st.me?.id, onUser)}</Text>}
-          {!!m.tournament && <TournamentCard tournament={m.tournament} />}
-          {!!m.imageUrl && <TouchableOpacity onPress={() => setZoom(m.imageUrl)}><Image source={{ uri: m.imageUrl }} style={styles.img} resizeMode="cover" /></TouchableOpacity>}
-          <Reactions m={m} meId={st.me?.id} onReact={e => react(m, e)} />
-        </Pressable>
-      </View>
-    );
-  };
-
+  // Rows only re-draw when their own message changes (not on every letter typed or every update elsewhere).
+  const act = useRef({});
+  act.current = { onUser, setMenu, del, setZoom, react };
+  const meId = st.me?.id;
+  const renderItem = useCallback(({ item }) => <Row m={item} meId={meId} admin={admin} muted={muted} theme={theme} act={act} />, [meId, admin, muted, theme]);
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
       <Header title={title} subtitle={subtitle} onBack={onBack} right={
@@ -197,6 +178,31 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
     </KeyboardAvoidingView>
   );
 }
+
+const Row = memo(function Row({ m, meId, admin, muted, act }) {
+  const mine = m.user.id === meId;
+  const tagsMe = !mine && (m.mentions || []).some(x => x.id === meId);
+  const onUser = u => act.current.onUser?.(u);
+  return (
+      <View style={[styles.msg, mine && { flexDirection: 'row-reverse' }]}>
+        <Avatar user={m.user} onPress={() => onUser?.(m.user)} />
+        <Pressable onLongPress={() => act.current.setMenu(m)} delayLongPress={350} style={[styles.bub, mine ? styles.mine : styles.theirs, tagsMe && styles.tagged]}>
+          <View style={styles.meta}>
+            <TouchableOpacity onPress={() => onUser?.(m.user)}><Text style={styles.name}>{m.user.name}</Text></TouchableOpacity>
+            <RoleTag user={m.user} />
+            <Text style={styles.time}>{timeLabel(m.ts)}</Text>
+            {(mine || admin) && <TouchableOpacity onPress={() => act.current.del(m)} hitSlop={8}><Text style={styles.del}>Delete</Text></TouchableOpacity>}
+          </View>
+          {!!m.reply && <View style={styles.quote}><Text style={styles.quoteName}>{m.reply.name}</Text><Text style={styles.quoteTxt} numberOfLines={2}>{m.reply.text}</Text></View>}
+          {!!m.poll ? <PollCard m={m} meId={meId} canVote={!muted} />
+            : !!m.text && <Text style={styles.txt}>{withTags(m.text, m.mentions, meId, onUser)}</Text>}
+          {!!m.tournament && <TournamentCard tournament={m.tournament} />}
+          {!!m.imageUrl && <TouchableOpacity onPress={() => act.current.setZoom(m.imageUrl)}><Image source={{ uri: m.imageUrl }} style={styles.img} resizeMode="cover" /></TouchableOpacity>}
+          <Reactions m={m} meId={meId} onReact={e => act.current.react(m, e)} />
+        </Pressable>
+      </View>
+    );
+  });
 
 // Under a message: 👍 3  🎯 1 … Tap one to give (or take back) that reaction.
 function Reactions({ m, meId, onReact }) {

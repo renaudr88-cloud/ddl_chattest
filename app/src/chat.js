@@ -93,7 +93,15 @@ class ChatClient {
   activeRoom = null;
 
   subscribe(fn) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
-  set(patch) { this.state = { ...this.state, ...(typeof patch === 'function' ? patch(this.state) : patch) }; this.listeners.forEach(f => f(this.state)); }
+  // The state changes at once; the screens are told once per frame, not after every single update.
+  // (At start-up many listeners answer within milliseconds: that was dozens of re-draws on a phone.)
+  set(patch) {
+    this.state = { ...this.state, ...(typeof patch === 'function' ? patch(this.state) : patch) };
+    if (this.flushing) return;
+    this.flushing = true;
+    const go = () => { this.flushing = false; this.listeners.forEach(f => f(this.state)); };
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(go); else setTimeout(go, 16);
+  }
 
   /* ---------- login ---------- */
   async restore() {
@@ -152,7 +160,7 @@ class ChatClient {
     this.stopAll();
     try { await signOut(auth); } catch {}
     await AsyncStorage.removeItem(TOKEN_KEY).catch(() => {});
-    this.older = {}; this.cursor = {}; this.live = {}; this.noticesAt = 0; this.players = null; this.dmsSeen = null; this.noticeTop = undefined; this.premierWas = undefined;
+    this.older = {}; this.cursor = {}; this.live = {}; this.msgCache = {}; this.noticesAt = 0; this.players = null; this.dmsSeen = null; this.noticeTop = undefined; this.premierWas = undefined;
     this.set({ ...initial, status: 'idle', platform: this.state.platform, read: this.state.read });
   }
 
@@ -258,11 +266,6 @@ class ChatClient {
         }
         this.set(st => ({ friendlies: { ...st.friendlies, [p]: all.filter(f => f.expiresAt > now) } }));
       }, onErr));
-      this.sub('swap:' + p, onSnapshot(query(collection(db, 'platforms', p, 'swap'), orderBy('ts', 'desc'), limit(60)), s => {
-        const list = s.docs.map(d => this.outSwap(d, p)).filter(x => x.status !== 'deleted')
-          .sort((a, b) => (a.status === 'done') - (b.status === 'done') || b.ts - a.ts);
-        this.set(st => ({ swap: { ...st.swap, [p]: list } }));
-      }, onErr));
       this.watchHelp(p, onErr);
     }
 
@@ -367,6 +370,16 @@ class ChatClient {
     else { watch('mine', query(col, where('uid', '==', this.uid), limit(50))); watch('solved', query(col, where('status', '==', 'solved'), limit(50))); }
   }
 
+  // Dartswap listings (with up to 3 pictures each) only load when someone opens Dartswap, for that platform.
+  watchSwap(p) {
+    if (!this.uid || this.subs.has('swap:' + p)) return;
+    this.sub('swap:' + p, onSnapshot(query(collection(db, 'platforms', p, 'swap'), orderBy('ts', 'desc'), limit(40)), s => {
+      const list = s.docs.map(d => this.outSwap(d, p)).filter(x => x.status !== 'deleted')
+        .sort((a, b) => (a.status === 'done') - (b.status === 'done') || b.ts - a.ts);
+      this.set(st => ({ swap: { ...st.swap, [p]: list } }));
+    }, () => {}));
+  }
+
   /* ---------- messages ---------- */
   watchRoom(room, onFirst) {
     if (this.subs.has('room:' + room)) { onFirst?.(); return Promise.resolve(); }
@@ -386,7 +399,10 @@ class ChatClient {
             this.older[room] = [...(this.older[room] || []), this.outMsg(c.doc, room)].sort((a, b) => a.ts - b.ts);
           }
         }
-        this.live[room] = s.docs.map(d => this.outMsg(d, room)).reverse();
+        // Only messages that changed are rebuilt; the others stay the same objects, so their rows do not re-draw.
+        const cache = (this.msgCache ||= {})[room] ||= new Map();
+        for (const c of s.docChanges()) if (c.type === 'removed') cache.delete(c.doc.id); else cache.set(c.doc.id, this.outMsg(c.doc, room));
+        this.live[room] = s.docs.map(d => cache.get(d.id) || this.outMsg(d, room)).reverse();
         if (first) { this.cursor[room] = s.docs[s.docs.length - 1]; }
         this.set(st => ({ rooms: { ...st.rooms, [room]: [...(this.older[room] || []), ...this.live[room]] },
           more: { ...st.more, [room]: first ? s.docs.length === PAGE : st.more[room] } }));

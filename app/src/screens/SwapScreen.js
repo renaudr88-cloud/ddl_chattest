@@ -15,6 +15,7 @@ const MAX_PHOTOS = 3;
 
 export default function SwapScreen({ onUser }) {
   const st = useChat();
+  useEffect(() => { chat.watchSwap(st.platform); }, [st.platform, st.status]);
   const [showForm, setShowForm] = useState(false);
   const [kind, setKind] = useState('Sell');
   const [title, setTitle] = useState('');
