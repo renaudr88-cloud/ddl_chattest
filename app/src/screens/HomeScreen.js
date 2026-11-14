@@ -4,6 +4,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Image, Modal, Pressable, Link
 import * as Clipboard from 'expo-clipboard';
 import { chat, useChat, listHere, RAFFLE_PLATFORM, mentionCount, blockedSet } from '../chat';
 import { BlockedList } from './Report';
+import { InstallBar, InstallGuide } from './Install';
 import { PLATFORMS, platformInfo } from '../platforms';
 import { Btn, Header, clock, showError, toast, PlatformLogo, RoomPicker } from '../components';
 import { RaffleGate, RaffleStaffBar } from './Raffle';
@@ -39,6 +40,7 @@ export default function HomeScreen() {
   const [sheet, setSheet] = useState(null);    // user
   const [settings, setSettings] = useState(false);
   const [welcome, setWelcome] = useState(false);
+  const [install, setInstall] = useState(false);
   const theme = useTheme();
   useEffect(() => { welcomeSeen().then(seen => { if (!seen) setWelcome(true); }); }, []);
 
@@ -160,6 +162,7 @@ export default function HomeScreen() {
           })}
         </View>
       )}
+      {!dm && !admin && <InstallBar onOpen={() => setInstall(true)} />}
       {!dm && !admin && <PushBar me={st.me} />}
       {!dm && !admin && isAdmin && st.reports?.length > 0 && (
         <TouchableOpacity style={styles.reportBar} onPress={() => setAdmin('reports')} accessibilityRole="button">
@@ -185,7 +188,8 @@ export default function HomeScreen() {
       )}
       {sheet && <MemberSheet user={sheet} onClose={() => setSheet(null)} onChat={chatWith} onChallenge={challenge} />}
       <Settings visible={settings} theme={theme} me={st.me} onClose={() => setSettings(false)} onModeration={() => { setSettings(false); setAdmin(true); }}
-        onHelp={() => { setSettings(false); setWelcome(true); }} />
+        onHelp={() => { setSettings(false); setWelcome(true); }} onInstall={() => { setSettings(false); setInstall(true); }} />
+      <InstallGuide visible={install} onClose={() => setInstall(false)} />
       <Welcome visible={welcome} onClose={() => setWelcome(false)} />
     </View>
   );
@@ -287,7 +291,7 @@ function PushBar({ me }) {
   const [hide, setHide] = useState(true);
   const [busy, setBusy] = useState(false);
   useEffect(() => { AsyncStorage.getItem(PUSH_BAR_KEY).then(v => setHide(v === '1')).catch(() => setHide(false)); }, []);
-  if (hide || !(status === 'off' || status === 'homescreen')) return null;
+  if (hide || status !== 'off') return null;   // iPhone not on the home screen yet: the install bar explains that first
   const close = () => { setHide(true); AsyncStorage.setItem(PUSH_BAR_KEY, '1').catch(() => {}); };
   const turnOn = async () => {
     setBusy(true);
@@ -319,7 +323,7 @@ function SoundSwitch() {
 }
 
 // Settings: app background (DDL blue or white) + log out. The choice is saved on the phone.
-function Settings({ visible, theme, me, onClose, onModeration, onHelp }) {
+function Settings({ visible, theme, me, onClose, onModeration, onHelp, onInstall }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.scrim} onPress={onClose}>
@@ -349,6 +353,7 @@ function Settings({ visible, theme, me, onClose, onModeration, onHelp }) {
           <SoundSwitch />
           <PushSwitch me={me} />
           <BlockedList />
+          <Btn title="📲 Install DDL Chat on this device" onPress={onInstall} />
           <Btn title="How the chat works" onPress={onHelp} />
           <Btn title="Log out" onPress={() => { onClose(); chat.logout(); }} />
           <Btn title="Close" kind="ghost" onPress={onClose} />
