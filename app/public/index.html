@@ -36,8 +36,9 @@
       /* height: auto, so the body is as tall as the whole screen (top 0 to bottom 0). With height: 100% an installed
          iPhone app came out one status bar too short, which left an empty band under the tab bar. */
       body { position: fixed; top: 0; right: 0; bottom: 0; left: 0; margin: 0; height: auto; }
-      #root { box-sizing: border-box; height: 100%; padding-top: env(safe-area-inset-top);
-        padding-bottom: calc(env(safe-area-inset-bottom) * 0.55); }   /* just clear of the home bar, no big gap */
+      /* No padding here: the app itself (SafeAreaView in App.js) keeps clear of the clock bar and the home bar.
+         Padding here as well counted those spaces twice: a big empty band under the tab bar. */
+      #root { height: 100%; }
       /* iPhone zooms in on a text box with letters smaller than 16px: keep every input at 16px or more */
       input, textarea, select { font-size: max(16px, 1em) !important; }
     </style>

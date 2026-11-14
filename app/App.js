@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { chat, useChat } from './src/chat';
 import { ToastHost, Btn } from './src/components';
 import { TEST_MODE } from './src/config';
@@ -25,13 +25,19 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={{ flex: 1, backgroundColor: C.navy }} edges={['top', 'left', 'right', 'bottom']}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: C.navy }} edges={['top', 'left', 'right']}>
         <StatusBar style="light" />
-        {body}
+        <BottomGap>{body}</BottomGap>
         <ToastHost />
       </SafeAreaView>
     </SafeAreaProvider>
   );
+}
+
+// iPhone home bar: keep the tab bar just clear of it, without a big empty band (about 60% of the safe area).
+function BottomGap({ children }) {
+  const { bottom } = useSafeAreaInsets();
+  return <View style={{ flex: 1, paddingBottom: Math.round(bottom * 0.6) }}>{children}</View>;
 }
 
 // Shown after logging in, until the chat server answers. If it can't be reached, say so instead of loading forever.
