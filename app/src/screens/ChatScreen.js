@@ -7,6 +7,7 @@ import { chat, useChat, isMuted, CAN_UPLOAD } from '../chat';
 import { hasBad } from '../filter';
 import { Avatar, Header, Notice, RoleTag, Lightbox, Empty, timeLabel, clock, toast, showError } from '../components';
 import { C, R, themed, useTheme } from '../theme';
+import { TournamentCard } from './Tournaments';
 
 export default function ChatScreen({ room, title, subtitle, onBack, onUser, right, below }) {
   const st = useChat();
@@ -106,6 +107,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
             {(mine || admin) && <TouchableOpacity onPress={() => del(m)} hitSlop={8}><Text style={styles.del}>Delete</Text></TouchableOpacity>}
           </View>
           {!!m.text && <Text style={styles.txt}>{withTags(m.text, m.mentions, st.me?.id, onUser)}</Text>}
+          {!!m.tournament && <TournamentCard tournament={m.tournament} />}
           {!!m.imageUrl && <TouchableOpacity onPress={() => setZoom(m.imageUrl)}><Image source={{ uri: m.imageUrl }} style={styles.img} resizeMode="cover" /></TouchableOpacity>}
         </View>
       </View>

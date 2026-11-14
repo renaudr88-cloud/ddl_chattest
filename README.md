@@ -85,6 +85,7 @@ The app calls these files next to `chat-login.php`, with the token `chat-login.p
 |---|---|
 | `chat-player.php?id=12` | a player's name, photo and Dartsmind name (private chat with someone who never opened the chat) |
 | `chat-matches.php` | my open matches in running tournaments: "Your match: vs ..." in the Dartsmind Tournament chat |
+| `chat-tournaments.php` | open tournaments (staff post one as a card in the Dartsmind Tournament chat; **Sign up** opens `tournament-detail.php` on the website, so all its checks stay the same) |
 | `chat-notifications.php` | the website's notifications (table `notifications`) under Messages → DDL notifications; POST marks them read |
 
 A link `https://ddl-chat-858ec.web.app/?dm=12` opens a private chat with player 12.

@@ -346,7 +346,7 @@ class ChatClient {
   outMsg(d, room) {
     const x = d.data({ serverTimestamps: 'estimate' });
     this.roomOf.set(d.id, room);
-    return { id: d.id, room, user: userOf(x), text: x.text || '', imageUrl: x.imageUrl || null, mentions: x.mentions || [], ts: ms(x.ts) };
+    return { id: d.id, room, user: userOf(x), text: x.text || '', imageUrl: x.imageUrl || null, mentions: x.mentions || [], tournament: x.tournament || null, ts: ms(x.ts) };
   }
   outFriendly(d, p) {
     const x = d.data({ serverTimestamps: 'estimate' });
@@ -454,6 +454,21 @@ class ChatClient {
       const u = await this.player(id);
       if (u.id === this.uid) fail('not_found', 'That is you.');
       return this.openDM(platform || this.state.platform, u);
+    },
+    // Tournaments from ddl-online.com (Dartsmind). Staff post one as a card in the Tournament chat;
+    // players sign up on the website's tournament page, where all its checks happen.
+    async 'tournaments.list'({ id } = {}) {
+      const r = await this.site('chat-tournaments.php' + (id ? '?id=' + encodeURIComponent(id) : ''));
+      return { list: r.list || [] };
+    },
+    async 'tournament.post'({ id, name }) {
+      if (this.role !== 'admin') fail('forbidden', 'Staff only.');
+      this.canPost();
+      const t = { id: Number(id), name: String(name).slice(0, 100) };
+      const batch = writeBatch(db);
+      batch.set(doc(collection(db, 'rooms', 'tournament:' + RAFFLE_PLATFORM, 'messages')),
+        { ...this.mine(), text: '📢 Sign up now: ' + t.name, imageUrl: null, tournament: t, ts: serverTimestamp() });
+      await batch.commit();
     },
     async 'matches.mine'() { const r = await this.site('chat-matches.php'); return { list: r.list || [] }; },
     async 'player.get'({ id }) { return { user: await this.player(id) }; },

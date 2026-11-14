@@ -6,6 +6,7 @@ import { chat, useChat, listHere, RAFFLE_PLATFORM, mentionCount } from '../chat'
 import { PLATFORMS, platformInfo } from '../platforms';
 import { Btn, Header, clock, showError, toast, PlatformLogo, RoomPicker } from '../components';
 import { RaffleGate, RaffleStaffBar } from './Raffle';
+import { PostTournament } from './Tournaments';
 import { C, themed, useTheme, setTheme, THEMES, PALETTES } from '../theme';
 import ChatScreen from './ChatScreen';
 import MessagesScreen from './MessagesScreen';
@@ -108,6 +109,7 @@ export default function HomeScreen() {
     } else {
       body = <ChatScreen key={r + st.platform} room={`${r}:${st.platform}`} title={info[0]} subtitle={info[1]} onUser={onUser} right={headerRight}
         below={<>{picker}{r === 'raffle' && isAdmin && <RaffleStaffBar />}
+          {r === 'tournament' && st.platform === 'dartsmind' && isAdmin && st.me?.id?.startsWith('ddl-') && <PostTournament />}
           {r === 'tournament' && st.platform === 'dartsmind' && <MyMatches onOpen={openDM} />}</>} />;
     }
   }

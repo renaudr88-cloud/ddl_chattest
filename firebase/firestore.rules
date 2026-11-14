@@ -100,7 +100,12 @@ service cloud.firestore {
     match /rooms/{room}/messages/{id} {
       allow read: if canRead() && roomOk(room) && roomAccess(room);
       allow create: if canPost() && roomOk(room) && roomAccess(room)
-        && request.resource.data.keys().hasOnly(['uid', 'name', 'role', 'avatar', 'text', 'imageUrl', 'mentions', 'ts'])
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'role', 'avatar', 'text', 'imageUrl', 'mentions', 'tournament', 'ts'])
+        // A tournament card (id + name of a ddl-online.com tournament): staff only.
+        && (!('tournament' in request.resource.data) || (isAdmin() && request.resource.data.tournament is map
+            && request.resource.data.tournament.keys().hasOnly(['id', 'name'])
+            && request.resource.data.tournament.id is int && request.resource.data.tournament.name is string
+            && request.resource.data.tournament.name.size() <= 100))
         && (!('mentions' in request.resource.data) || (request.resource.data.mentions is list && request.resource.data.mentions.size() <= 10))
         && request.resource.data.uid == me()
         && request.resource.data.name == myName() && avatarOk(request.resource.data)
