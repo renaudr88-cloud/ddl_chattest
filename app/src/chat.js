@@ -71,7 +71,7 @@ const roomPlatform = room => room.split(':')[1];
 const userOf = d => ({ id: d.uid, name: d.name || 'Unknown', role: d.role || 'player', avatar: d.avatar || null });
 function friendly(e) {
   const c = e?.code || '';
-  if (c === 'permission-denied') return new Fail(c, 'That is not allowed. If you are muted, you can only read. In a private chat: this player may not accept your messages.');
+  if (c === 'permission-denied') return new Fail(c, 'Not allowed. (Staff: are the newest Firebase rules published?)');
   if (c === 'unavailable') return new Fail(c, 'No connection. Check your internet and try again.');
   return e instanceof Fail ? e : new Fail(c || 'error', e?.message || 'Something went wrong. Try again.');
 }
@@ -454,7 +454,12 @@ class ChatClient {
     const h = this.actions[type];
     if (!h) throw new Fail('unknown', 'Unknown action.');
     if (!this.uid) throw new Fail('offline', 'Log in first.');
-    try { return (await h.call(this, data)) || {}; } catch (e) { throw friendly(e); }
+    try { return (await h.call(this, data)) || {}; } catch (e) {
+      // Sending in a private chat to someone who blocked me is refused by the rules.
+      if (e?.code === 'permission-denied' && type === 'send' && String(data.room || '').startsWith('dm:'))
+        throw new Fail('blocked', 'This player does not accept your messages.');
+      throw friendly(e);
+    }
   }
   canPost(text = '', what = 'Your message') {
     if (this.state.me?.sanction?.muted_until > Date.now()) fail('muted', 'You are muted. You can still read the chat.');
@@ -607,6 +612,7 @@ class ChatClient {
     // The other player keeps it. A new message brings the chat back, with only the new messages.
     async 'dm.hide'({ room }) {
       if (!String(room).startsWith('dm:')) fail('bad_input', 'Only private chats can be deleted.');
+      // (permission denied here means the Firebase rules with prefs/{uid} are not published yet)
       const hidden = { ...(this.state.hiddenDms || {}), [room]: Date.now() };
       const keys = Object.keys(hidden);
       if (keys.length > 400) for (const k of keys.sort((a, b) => hidden[a] - hidden[b]).slice(0, keys.length - 400)) delete hidden[k];
