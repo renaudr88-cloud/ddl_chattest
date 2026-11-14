@@ -1,4 +1,5 @@
 // Tap any player: private chat, and for staff: mute / kick / ban.
+import { useEffect, useState } from 'react';
 import { View, Text, Modal, Pressable, StyleSheet } from 'react-native';
 import { chat, useChat } from '../chat';
 import { Avatar, Btn, ConfirmBtn, RoleTag, toast, showError, s as ui } from '../components';
@@ -7,6 +8,12 @@ import { C, themed } from '../theme';
 
 export default function MemberSheet({ user, onClose, onChat }) {
   const st = useChat();
+  const [staff, setStaff] = useState(null);   // is this player chat staff (made by a DDL admin)?
+  const ddlAdmin = !!st.me?.ddlAdmin && !!user && user.id !== st.me?.id && String(user.id).startsWith('ddl-');
+  useEffect(() => {
+    setStaff(null);
+    if (ddlAdmin) chat.request('staff.get', { userId: user.id }).then(r => setStaff(r.staff)).catch(() => {});
+  }, [user?.id, ddlAdmin]);
   if (!user) return null;
   const member = st.members.find(m => m.id === user.id) || user;
   const s = statusOf(member.sanction);
@@ -18,6 +25,14 @@ export default function MemberSheet({ user, onClose, onChat }) {
       const r = await chat.request('mod', { action, userId: user.id, minutes });
       chat.set(x => ({ members: x.members.map(m => m.id === user.id ? { ...m, sanction: r.sanction } : m) }));
       toast(`${user.name}: ${statusOf(r.sanction).label}`);
+      onClose();
+    } catch (e) { showError(e); }
+  };
+
+  const setRole = async on => {
+    try {
+      await chat.request('staff.set', { user: { id: user.id, name: user.name }, on });
+      toast(on ? `${user.name} is now chat staff.` : `${user.name} is no longer chat staff.`);
       onClose();
     } catch (e) { showError(e); }
   };
@@ -34,6 +49,9 @@ export default function MemberSheet({ user, onClose, onChat }) {
             </View>
           </View>
           {!self && <Btn kind="pri" title="Private chat" onPress={() => onChat(user)} />}
+          {ddlAdmin && staff !== null && (staff
+            ? <ConfirmBtn title="Remove chat staff" confirmTitle={`Tap again: ${user.name} is no longer staff`} onConfirm={() => setRole(false)} />
+            : user.role !== 'admin' && <ConfirmBtn title="Make chat staff" confirmTitle={`Tap again: make ${user.name} staff`} onConfirm={() => setRole(true)} />)}
           {canMod && <>
             <Text style={[ui.section, { marginBottom: 0 }]}>Moderation</Text>
             <View style={styles.grid}>

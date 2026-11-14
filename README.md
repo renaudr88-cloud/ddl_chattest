@@ -103,7 +103,8 @@ A link `https://ddl-chat-858ec.web.app/?dm=12` opens a private chat with player 
 | `raffleAccess/{uid}` | raffle chat access request: name, status pending / approved / declined / removed |
 | `sanctions/{uid}` | mutedUntil, kickedUntil, banned (written by staff) |
 | `modlog/{id}` | staff actions |
-| `staff/{uid}`, `config/staff` | test version staff code |
+| `staff/{uid}` | chat staff made by a DDL admin (player card → Make chat staff); test version: staff code |
+| `config/staff` | test version staff code |
 
 Platforms: `app/src/platforms.js` and `platforms()` in `firebase/firestore.rules` (keep them the same).
 
@@ -115,7 +116,8 @@ Platforms: `app/src/platforms.js` and `platforms()` in `firebase/firestore.rules
 - Private chats: only the two members can read them.
 - Raffle chat (`raffle:dartsmind`): only staff and players whose access request staff approved.
 - Help desk: players see their own questions and the solved ones; only staff answer.
-- Staff (DDL role admin, or test staff code) can delete messages and listings, mute, kick and ban; staff cannot sanction staff.
+- Staff = admins of ddl-online.com (`is_admin = 1`), plus players a DDL admin made chat staff in the app.
+- Staff can delete messages and listings, mute, kick and ban; staff cannot sanction staff.
 - Bad words: blocked in the rules (plain words) and in the app (also "f.u.c.k", "k4nker").
   Lists: `app/src/filter.js` and `clean()` in `firebase/firestore.rules`.
 - Pictures: only JPEG pictures made by the app, under 400 KB.

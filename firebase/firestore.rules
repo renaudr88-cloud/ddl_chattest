@@ -13,7 +13,7 @@ rules_version = '2';
 //   sanctions/{uid}                      mutedUntil, kickedUntil (timestamps), banned
 //   raffleAccess/{uid}                   raffle chat access: name, status pending|approved|declined|removed
 //   modlog/{id}                          staff actions
-//   staff/{uid}                          test mode only: staff who entered the staff code
+//   staff/{uid}                          chat staff: made by a DDL admin {name, by, ts} (or test staff code)
 //   config/staff                         test mode only: { code: "..." } (set in the console, unreadable for the app)
 //
 // Staff (admin): a DDL login with ddlRole "admin" in the token (made by php/chat-login.php),
@@ -29,6 +29,7 @@ service cloud.firestore {
     function isAdmin() {
       return signedIn() && (request.auth.token.get('ddlRole', '') == 'admin' || exists(/databases/$(database)/documents/staff/$(me())));
     }
+    function isDDLAdmin() { return signedIn() && request.auth.token.get('ddlRole', '') == 'admin'; }   // is_admin on ddl-online.com
     function myRole() { return isAdmin() ? 'admin' : 'player'; }
     function myName() { return get(/databases/$(database)/documents/users/$(me())).data.name; }
     // Profile photo: only the photo from the DDL website (claim ddlPhoto in the token made by php/chat-login.php).
@@ -206,12 +207,18 @@ service cloud.firestore {
       allow create: if isAdmin() && request.resource.data.adminUid == me() && request.resource.data.ts == request.time;
     }
 
-    // ---------- test mode staff ----------
+    // ---------- chat staff ----------
+    // DDL admins (is_admin on the website) can make a player chat staff, and take it back.
+    // In the test version, someone who enters the staff code from config/staff becomes staff too.
     match /staff/{uid} {
-      allow read: if signedIn() && uid == me();
-      allow create: if signedIn() && uid == me() && exists(/databases/$(database)/documents/config/staff)
-        && request.resource.data.keys().hasOnly(['code'])
-        && request.resource.data.code == get(/databases/$(database)/documents/config/staff).data.code;
+      allow read: if signedIn() && (uid == me() || isAdmin());
+      allow create: if (signedIn() && uid == me() && exists(/databases/$(database)/documents/config/staff)
+          && request.resource.data.keys().hasOnly(['code'])
+          && request.resource.data.code == get(/databases/$(database)/documents/config/staff).data.code)
+        || (isDDLAdmin() && uid != me()
+          && request.resource.data.keys().hasOnly(['name', 'by', 'ts'])
+          && request.resource.data.by == me() && request.resource.data.ts == request.time);
+      allow delete: if isDDLAdmin();
     }
     match /config/{id} {
       allow read, write: if false;   // set by hand in the Firebase console

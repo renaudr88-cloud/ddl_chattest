@@ -146,12 +146,13 @@ class ChatClient {
     if (!this.appSub) this.appSub = AppState.addEventListener('change', s => { if (s === 'active' && this.uid && this.state.status !== 'idle') this.heartbeat(); });
     try {
       const claims = (await auth.currentUser.getIdTokenResult()).claims;
-      let admin = claims.ddlRole === 'admin';
+      this.ddlAdmin = claims.ddlRole === 'admin';   // admin on ddl-online.com: can also make chat staff
+      let admin = this.ddlAdmin;
       if (!admin) { try { admin = (await getDoc(doc(db, 'staff', this.uid))).exists(); } catch {} }
       this.role = admin ? 'admin' : 'player';
       this.avatar = claims.ddlPhoto || null;   // profile photo from the DDL website (DDL login only)
       await this.saveProfile();
-      this.set({ me: { id: this.uid, name: this.name, role: this.role, avatar: this.avatar, sanction: sanctionFrom(null) } });
+      this.set({ me: { id: this.uid, name: this.name, role: this.role, ddlAdmin: this.ddlAdmin, avatar: this.avatar, sanction: sanctionFrom(null) } });
       this.connect();
     } catch (e) {
       this.set({ status: 'offline' });
@@ -238,6 +239,17 @@ class ChatClient {
       }, onErr));
       this.watchHelp(p, onErr);
     }
+
+    // Made chat staff (or no longer) by a DDL admin: switch right away, without logging in again.
+    if (!this.ddlAdmin) this.sub('staffMe', onSnapshot(doc(db, 'staff', this.uid), s => {
+      const role = s.exists() ? 'admin' : 'player';
+      if (role === this.role) return;
+      this.role = role;
+      this.set(st => ({ me: st.me && { ...st.me, role } }));
+      toast(role === 'admin' ? 'You are now DDL chat staff.' : 'You are no longer chat staff.');
+      this.saveProfile().catch(() => {});
+      this.connect();
+    }, () => {}));
 
     // Raffle chat (Dartsmind only): players need staff approval. Staff see every request.
     this.sub('raffleMine', onSnapshot(doc(db, 'raffleAccess', this.uid), s => {
@@ -580,6 +592,15 @@ class ChatClient {
         return { ...userOf({ uid: d.id, ...x }), online: now - lastSeen < 5 * MIN, lastSeen, sanction: sans.get(d.id) || sanctionFrom(null) };
       });
       return { list, log: await this.loadLog() };
+    },
+    // DDL admins: make a player chat staff, or take it back. (Website admins are always staff.)
+    async 'staff.get'({ userId }) { return { staff: (await getDoc(doc(db, 'staff', userId))).exists() }; },
+    async 'staff.set'({ user, on }) {
+      if (!this.ddlAdmin) fail('forbidden', 'Only DDL admins can do this.');
+      if (on) await setDoc(doc(db, 'staff', user.id), { name: user.name, by: this.uid, ts: serverTimestamp() });
+      else await deleteDoc(doc(db, 'staff', user.id));
+      this.set(st => ({ members: st.members.map(m => m.id === user.id ? { ...m, role: on ? 'admin' : 'player' } : m) }));
+      await this.log(on ? 'staff_add' : 'staff_remove', user, '');
     },
     async mod({ action, userId, minutes }) {
       if (this.role !== 'admin') fail('forbidden', 'Staff only.');
