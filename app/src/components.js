@@ -1,14 +1,27 @@
 import { useState, useEffect, useRef } from 'react';
 import { View, Text, TouchableOpacity, Image, StyleSheet, Modal, Pressable, ActivityIndicator, ScrollView } from 'react-native';
 import { C, R, themed } from './theme';
+import { LOGIN_URL } from './config';
 
 const AV_COLORS = ['#1E6FD9', '#FB5801', '#1E8E5A', '#8B3FD9', '#C2185B', '#00838F', '#6D4C41', '#3949AB'];
 const colorFor = id => AV_COLORS[[...String(id)].reduce((a, c) => a + c.charCodeAt(0), 0) % AV_COLORS.length];
 const initials = n => String(n || '?').split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
 
+// Website photos are often several MB: show a small copy made by php/chat-avatar.php
+// (falls back to the original if that file is not on the server).
+const SITE_BASE = LOGIN_URL ? LOGIN_URL.replace(/chat-login\.php$/, '') : '';
+export function smallPhoto(url, size = 36) {
+  if (!url || !SITE_BASE || !url.startsWith(SITE_BASE)) return url;
+  const path = url.slice(SITE_BASE.length).split('?')[0];
+  if (!/^(images|uploads)\/[A-Za-z0-9_./-]+\.(jpe?g|png|webp|gif)$/i.test(path)) return url;
+  return `${SITE_BASE}chat-avatar.php?s=${size > 48 ? 200 : 96}&f=${encodeURIComponent(path)}`;
+}
 export function Avatar({ user, size = 36, onPress }) {
+  const [failed, setFailed] = useState(false);
+  const small = smallPhoto(user?.avatar, size);
   const body = user?.avatar
-    ? <Image source={{ uri: user.avatar }} style={{ width: size, height: size, borderRadius: size / 2 }} />
+    ? <Image source={{ uri: failed ? user.avatar : small }} onError={() => !failed && small !== user.avatar && setFailed(true)}
+        style={{ width: size, height: size, borderRadius: size / 2 }} />
     : <View style={[s.av, { width: size, height: size, borderRadius: size / 2, backgroundColor: colorFor(user?.id) }]}>
         <Text style={[s.avTxt, { fontSize: size * 0.4 }]}>{initials(user?.name)}</Text>
       </View>;

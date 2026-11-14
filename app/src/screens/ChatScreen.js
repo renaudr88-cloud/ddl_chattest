@@ -132,6 +132,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
       {!list ? <View style={{ flex: 1 }}><ActivityIndicator color={C.orange} style={{ marginTop: 40 }} /></View> :
         <FlatList
           data={data} extraData={theme} inverted keyExtractor={m => String(m.id)} renderItem={renderItem}
+          initialNumToRender={15} maxToRenderPerBatch={10} windowSize={9} updateCellsBatchingPeriod={60}
           contentContainerStyle={{ padding: 14 }}
           onEndReached={() => chat.loadOlder(room).catch(() => {})} onEndReachedThreshold={0.3}
           ListEmptyComponent={<View style={{ transform: [{ scaleY: -1 }] }}><Empty text="No messages yet. Say hi 👋" /></View>}

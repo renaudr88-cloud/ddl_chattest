@@ -12,10 +12,12 @@ if (!$me) chat_json(401, ['error' => 'Log in again.']);
 $uid = (int)$me['uid'];
 $db = chat_db();
 
-function swap_img_url($path) {
+// Photos go through chat-swap-img.php: a small resized copy instead of the multi-MB original.
+function swap_img_url($path, $w = 640) {
     $path = trim((string)$path);
     if ($path === '' || str_contains($path, '..') || !preg_match('~^[A-Za-z0-9_./-]+\.(jpe?g|png|webp|gif)$~i', $path)) return null;
-    return rtrim(CHAT_SITE_URL, '/') . '/' . ltrim($path, '/');
+    if (strpos(ltrim($path, '/'), 'uploads/swaps/') !== 0) return rtrim(CHAT_SITE_URL, '/') . '/' . ltrim($path, '/');
+    return rtrim(CHAT_SITE_URL, '/') . '/chat-swap-img.php?w=' . $w . '&f=' . rawurlencode(ltrim($path, '/'));
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -43,6 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             'swapFor' => trim((string)($r['swap_for'] ?? '')) ?: null,
             'price' => $r['price'] !== null && $r['price'] !== '' ? (string)$r['price'] : null,
             'images' => array_values(array_filter([swap_img_url($r['image_1']), swap_img_url($r['image_2']), swap_img_url($r['image_3'])])),
+            'imagesFull' => array_values(array_filter([swap_img_url($r['image_1'], 1280), swap_img_url($r['image_2'], 1280), swap_img_url($r['image_3'], 1280)])),
             'user' => [
                 'id' => 'ddl-' . (int)$r['user_id'],
                 'name' => mb_substr(trim((string)$r['name']) !== '' ? trim((string)$r['name']) : $name, 0, 30),

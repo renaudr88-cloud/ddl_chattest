@@ -74,7 +74,7 @@ export default function SwapScreen({ onUser }) {
   const hide = blockedSet(st);
   const fromSite = siteList.filter(x => !hide.has(x.user.id)).map(x => ({
     id: 'site-' + x.id, siteId: x.id, site: true, user: x.user, kind: x.price ? 'Sell' : 'Swap', title: x.title, price: x.price || '',
-    swapFor: x.swapFor, cond: '', desc: x.desc, images: x.images, status: 'open', ts: x.ts }));
+    swapFor: x.swapFor, cond: '', desc: x.desc, images: x.images, full: x.imagesFull, status: 'open', ts: x.ts }));
   const list = [...listHere(st, 'swap'), ...fromSite].sort((a, b) => (a.status === 'done') - (b.status === 'done') || b.ts - a.ts)
     .filter(x => filter === 'All' || x.kind === filter);
 
@@ -117,7 +117,7 @@ export default function SwapScreen({ onUser }) {
           const mine = x.user.id === st.me?.id, open = x.status === 'open';
           return (
             <View key={x.id} style={[ui.card, !open && { opacity: 0.55 }]}>
-              {x.images.length > 0 && <Photos images={x.images} onOpen={setZoom} />}
+              {x.images.length > 0 && <Photos images={x.images} full={x.full} onOpen={setZoom} />}
               <View style={ui.row}><Chip solid label={x.kind} color={KIND_COLOR[x.kind]} />{!open && <Chip solid label={x.kind === 'Wanted' ? 'Found' : 'Sold / swapped'} />}{!!x.cond && <Chip label={x.cond} />}{x.site && <Chip label="🌐 ddl-online.com" />}</View>
               <Text style={{ color: C.fg, fontSize: 17, fontWeight: '700' }}>{x.title}</Text>
               {x.kind === 'Sell' && !!x.price && <Text style={{ color: C.fg, fontSize: 24, fontWeight: '900' }}>{x.site ? '£' : '€'}{x.price}</Text>}
@@ -140,7 +140,7 @@ export default function SwapScreen({ onUser }) {
 }
 
 // Listing photos: swipe left/right, tap to enlarge.
-function Photos({ images, onOpen }) {
+function Photos({ images, full, onOpen }) {
   const { width } = useWindowDimensions();
   const w = Math.min(width, 640) - 58;          // card width inside the page padding
   const [page, setPage] = useState(0);
@@ -149,7 +149,7 @@ function Photos({ images, onOpen }) {
       <ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} style={{ borderRadius: 10 }}
         onScroll={e => setPage(Math.round(e.nativeEvent.contentOffset.x / w))} scrollEventThrottle={50}>
         {images.map((uri, i) => (
-          <TouchableOpacity key={i} activeOpacity={0.9} onPress={() => onOpen(uri)}>
+          <TouchableOpacity key={i} activeOpacity={0.9} onPress={() => onOpen(full?.[i] || uri)}>
             <Image source={{ uri }} style={{ width: w, height: w * 0.75, borderRadius: 10 }} resizeMode="cover" />
           </TouchableOpacity>))}
       </ScrollView>
