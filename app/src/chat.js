@@ -284,7 +284,7 @@ class ChatClient {
     // Private chats I deleted (only I can read or change this).
     this.sub('prefsMine', onSnapshot(doc(db, 'prefs', this.uid), s => {
       this.set({ hiddenDms: (s.exists() && s.data().hiddenDms) || {} });
-    }, () => {}));
+    }, () => getDoc(doc(db, 'prefs', this.uid)).then(s => s.exists() && this.set({ hiddenDms: s.data().hiddenDms || {} })).catch(() => {})));
     // Staff: open reports from players.
     if (this.role === 'admin') {
       this.sub('reports', onSnapshot(query(collection(db, 'reports'), where('status', '==', 'open'), limit(50)), s => {
@@ -617,6 +617,7 @@ class ChatClient {
       const keys = Object.keys(hidden);
       if (keys.length > 400) for (const k of keys.sort((a, b) => hidden[a] - hidden[b]).slice(0, keys.length - 400)) delete hidden[k];
       await setDoc(doc(db, 'prefs', this.uid), { hiddenDms: hidden });
+      this.set({ hiddenDms: hidden });   // right away, also if the live listener is not running
     },
     // Report a player or a message to DDL staff.
     async report({ user, room, message, reason, note }) {
