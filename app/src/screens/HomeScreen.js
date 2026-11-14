@@ -39,15 +39,19 @@ export default function HomeScreen() {
   const theme = useTheme();
   useEffect(() => { welcomeSeen().then(seen => { if (!seen) setWelcome(true); }); }, []);
 
-  // Opened from the brackets on ddl-online.com: ...web.app/?dm=<player id>  → private chat with that player.
+  // Opened from the brackets on ddl-online.com: ...web.app/?dmn=<Dartsmind name> (or ?dm=<player id>)
+  // → private chat with that player.
   useEffect(() => {
     const go = url => {
       const m = /[?&]dm=(\d+)/.exec(url || '');
-      if (!m) return;
+      const n = /[?&]dmn=([^&#]+)/.exec(url || '');
+      if (!m && !n) return;
       const p = /[?&]p=([a-z]+)/.exec(url)?.[1];
       if (Platform.OS === 'web') { try { window.history.replaceState(null, '', window.location.pathname); } catch {} }
-      if (p && PLATFORMS.some(x => x.key === p)) chat.setPlatform(p);
-      chat.requestHere('dm.player', { id: m[1], ...(p ? { platform: p } : {}) })
+      chat.setPlatform(p && PLATFORMS.some(x => x.key === p) ? p : 'dartsmind');   // tournaments are on Dartsmind
+      let name = null;
+      try { name = n && decodeURIComponent(n[1].replace(/\+/g, ' ')); } catch {}
+      chat.requestHere('dm.player', { ...(m ? { id: m[1] } : { dartsmind: name }), platform: p || 'dartsmind' })
         .then(r => { setSheet(null); setAdmin(false); setDm(r); }).catch(showError);
     };
     Linking.getInitialURL().then(go).catch(() => {});

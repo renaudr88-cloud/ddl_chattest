@@ -519,8 +519,8 @@ class ChatClient {
       return this.openDM(platform || this.state.platform, userOf({ uid: userId, ...snap.data() }));
     },
     // From the brackets on the website: ?dm=<player id> opens a private chat with that player.
-    async 'dm.player'({ id, platform }) {
-      const u = await this.player(id);
+    async 'dm.player'({ id, dartsmind, platform }) {
+      const u = dartsmind ? (await this.site('chat-player.php?dm=' + encodeURIComponent(dartsmind))).user : await this.player(id);
       if (u.id === this.uid) fail('not_found', 'That is you.');
       return this.openDM(platform || this.state.platform, u);
     },
