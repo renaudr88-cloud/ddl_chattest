@@ -10,7 +10,7 @@ import {
 } from 'firebase/auth';
 import {
   collection, doc, query, where, orderBy, limit, startAfter, onSnapshot, getDoc, getDocs, setDoc, addDoc, updateDoc,
-  deleteDoc, writeBatch, serverTimestamp, Timestamp, arrayUnion, getCountFromServer,
+  deleteDoc, writeBatch, serverTimestamp, Timestamp, arrayUnion, getCountFromServer, FieldPath, deleteField,
 } from 'firebase/firestore';
 import { auth, db, FIREBASE_READY } from './firebase';
 import { TEST_MODE, LOGIN_URL, UPLOAD_URL } from './config';
@@ -25,6 +25,7 @@ const PAGE = 40;                          // messages loaded per room (keeps Fir
 const MIN = 60_000;
 const FRIENDLY_MINUTES = 15;              // friendlies disappear after this
 const P_KEYS = PLATFORMS.map(p => p.key);
+export const REACTIONS = ['👍', '🎯', '🔥', '😂', '👏', '💯'];   // keep in line with firebase/firestore.rules
 export const RAFFLE_PLATFORM = 'dartsmind';             // raffles only exist on Dartsmind
 const RAFFLE_ROOM = 'raffle:' + RAFFLE_PLATFORM;
 
@@ -358,7 +359,8 @@ class ChatClient {
   outMsg(d, room) {
     const x = d.data({ serverTimestamps: 'estimate' });
     this.roomOf.set(d.id, room);
-    return { id: d.id, room, user: userOf(x), text: x.text || '', imageUrl: x.imageUrl || null, mentions: x.mentions || [], tournament: x.tournament || null, ts: ms(x.ts) };
+    return { id: d.id, room, user: userOf(x), text: x.text || '', imageUrl: x.imageUrl || null, mentions: x.mentions || [], tournament: x.tournament || null,
+      reactions: x.reactions || {}, reply: x.reply || null, ts: ms(x.ts) };
   }
   outFriendly(d, p) {
     const x = d.data({ serverTimestamps: 'estimate' });
@@ -400,10 +402,11 @@ class ChatClient {
     await this.watchRoom(room);
     return { room, other };
   }
-  async postMessage(room, text, imageUrl, otherHint, mentions) {
+  async postMessage(room, text, imageUrl, otherHint, mentions, reply) {
     const batch = writeBatch(db);
     const msg = { ...this.mine(), text: text || '', imageUrl: imageUrl || null, ts: serverTimestamp() };
     if (mentions?.length) msg.mentions = mentions;
+    if (reply?.id) msg.reply = { id: String(reply.id), name: String(reply.name || '').slice(0, 30), text: String(reply.text || '📷 Picture').slice(0, 120) };
     batch.set(doc(collection(db, 'rooms', room, 'messages')), msg);
     if (room.startsWith('dm:')) {
       const [, p, a, b] = room.split(':');
@@ -435,7 +438,7 @@ class ChatClient {
     },
     async history({ room }) { await this.watchRoom(room); return { room, messages: this.state.rooms[room] || [] }; },
 
-    async send({ room, text, imageUrl, mentions }) {
+    async send({ room, text, imageUrl, mentions, reply }) {
       text = String(text || '').trim().slice(0, 1000);
       if (!text && !imageUrl) fail('empty', 'Write a message or add a picture.');
       this.canPost(text);
@@ -444,7 +447,16 @@ class ChatClient {
       for (const m of mentions || []) {
         if (m?.id && m.id !== this.uid && text.includes('@' + m.name) && !tags.some(t => t.id === m.id)) tags.push({ id: String(m.id), name: String(m.name).slice(0, 30) });
       }
-      await this.postMessage(room, text, imageUrl, null, tags.slice(0, 10));
+      await this.postMessage(room, text, imageUrl, null, tags.slice(0, 10), reply);
+    },
+    // One reaction per player per message; the same emoji again takes it away.
+    async react({ id, emoji }) {
+      const room = this.roomOf.get(id); if (!room) return;
+      if (isMuted(this.state.me)) fail('muted', 'You are muted.');
+      const msg = (this.state.rooms[room] || []).find(m => m.id === id);
+      const same = msg?.reactions?.[this.uid] === emoji;
+      if (emoji && !REACTIONS.includes(emoji)) fail('bad_input', 'Unknown reaction.');
+      await updateDoc(doc(db, 'rooms', room, 'messages', id), new FieldPath('reactions', this.uid), emoji && !same ? emoji : deleteField());
     },
     async delete({ id }) {
       const room = this.roomOf.get(id); if (!room) return;
@@ -481,6 +493,14 @@ class ChatClient {
       batch.set(doc(collection(db, 'rooms', 'tournament:' + RAFFLE_PLATFORM, 'messages')),
         { ...this.mine(), text: '📢 Sign up now: ' + t.name, imageUrl: null, tournament: t, ts: serverTimestamp() });
       await batch.commit();
+    },
+    // Messages → + New: DDL players by name or Dartsmind name (also players who never opened the chat).
+    async 'players.search'({ q }) {
+      q = String(q || '').trim();
+      if (TEST_MODE || !this.uid.startsWith('ddl-')) return this.actions['users.search'].call(this, { q });
+      if (q.length < 2) return { list: [] };
+      const r = await this.site('chat-search.php?q=' + encodeURIComponent(q));
+      return { list: r.list || [] };
     },
     async 'matches.mine'() { const r = await this.site('chat-matches.php'); return { list: r.list || [] }; },
     async 'player.get'({ id }) { return { user: await this.player(id) }; },

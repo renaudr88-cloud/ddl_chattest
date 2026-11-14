@@ -101,7 +101,12 @@ service cloud.firestore {
     match /rooms/{room}/messages/{id} {
       allow read: if canRead() && roomOk(room) && roomAccess(room);
       allow create: if canPost() && roomOk(room) && roomAccess(room)
-        && request.resource.data.keys().hasOnly(['uid', 'name', 'role', 'avatar', 'text', 'imageUrl', 'mentions', 'tournament', 'ts'])
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'role', 'avatar', 'text', 'imageUrl', 'mentions', 'tournament', 'reply', 'ts'])
+        // Reply to another message: a short quote of it.
+        && (!('reply' in request.resource.data) || (request.resource.data.reply is map
+            && request.resource.data.reply.keys().hasOnly(['id', 'name', 'text'])
+            && request.resource.data.reply.id is string && request.resource.data.reply.name is string
+            && request.resource.data.reply.name.size() <= 30 && text(request.resource.data.reply.text, 120)))
         // A tournament card (id + name of a ddl-online.com tournament): staff only.
         && (!('tournament' in request.resource.data) || (isAdmin() && request.resource.data.tournament is map
             && request.resource.data.tournament.keys().hasOnly(['id', 'name'])
@@ -115,6 +120,12 @@ service cloud.firestore {
         && text(request.resource.data.text, 1000)
         && picture(request.resource.data.get('imageUrl', null))
         && (request.resource.data.text.size() > 0 || request.resource.data.get('imageUrl', null) != null);
+      // Reactions: one emoji per player per message (reactions.<uid>), only your own.
+      allow update: if canPost() && roomOk(room) && roomAccess(room)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reactions'])
+        && request.resource.data.reactions is map && request.resource.data.reactions.size() <= 500
+        && request.resource.data.reactions.diff(resource.data.get('reactions', {})).affectedKeys().hasOnly([me()])
+        && (!(me() in request.resource.data.reactions) || request.resource.data.reactions[me()] in ['👍', '🎯', '🔥', '😂', '👏', '💯']);
       allow delete: if signedIn() && (resource.data.uid == me() || isAdmin());
     }
 

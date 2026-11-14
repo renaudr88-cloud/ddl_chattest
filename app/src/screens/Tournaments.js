@@ -51,39 +51,47 @@ export function TournamentCard({ tournament }) {
   );
 }
 
-// Staff: pick a tournament from the website and post it in the Tournament chat.
-export function PostTournament() {
+// Tournament chat (Dartsmind): a bar "🏆 3 open tournaments" that is always there. Tap it for the list;
+// players sign up on the website from there, staff can also post one as a card in the chat.
+export function OpenTournaments({ staff }) {
   const [open, setOpen] = useState(false);
   const [list, setList] = useState(null);
-  const show = () => {
-    setOpen(true); setList(null);
-    chat.request('tournaments.list').then(r => setList(r.list)).catch(e => { showError(e); setList([]); });
-  };
+  const load = () => chat.request('tournaments.list').then(r => setList(r.list)).catch(() => setList(l => l || []));
+  useEffect(() => { load(); const t = setInterval(load, 5 * 60_000); return () => clearInterval(t); }, []);
+  const show = () => { setOpen(true); load(); };
   const post = async t => {
     try { await chat.request('tournament.post', { id: t.id, name: t.name }); setOpen(false); toast('Posted in the Tournament chat.'); }
     catch (e) { showError(e); }
   };
+  const n = list?.length || 0;
+  const mine = (list || []).filter(t => t.me).length;
   return (
     <>
-      <TouchableOpacity onPress={show} style={styles.bar} accessibilityRole="button">
-        <Text style={styles.barTxt}>📢 Post a tournament</Text><Text style={styles.barTxt}>›</Text>
+      <TouchableOpacity onPress={show} style={[styles.bar, n > 0 && styles.barHot]} accessibilityRole="button" accessibilityLabel="Open tournaments">
+        <Text style={styles.barTxt}>🏆 {list === null ? 'Tournaments' : n ? `${n} open tournament${n === 1 ? '' : 's'}` : 'No open tournaments'}{mine ? ` · you're in ${mine}` : ''}</Text>
+        <Text style={styles.barTxt}>{staff ? 'View / post ›' : 'View ›'}</Text>
       </TouchableOpacity>
       <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
         <Pressable style={styles.scrim} onPress={() => setOpen(false)}>
           <Pressable style={styles.sheet} onPress={() => {}}>
-            <Text style={styles.title}>Post a tournament</Text>
-            <Text style={{ color: C.muted }}>Open tournaments on ddl-online.com. Players sign up from the card.</Text>
+            <Text style={styles.title}>Open tournaments</Text>
+            <Text style={{ color: C.muted }}>Tap Sign up: you finish on ddl-online.com.{staff ? ' Staff: Post shares it in the chat.' : ''}</Text>
             {!list ? <ActivityIndicator color={C.orange} /> :
-              <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ gap: 8 }}>
-                {!list.length && <Empty text="No open tournaments on the website." />}
-                {list.map(t => (
-                  <View key={t.id} style={styles.row}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.rowName}>{t.name}</Text>
-                      <Text style={styles.rowSub}>{when(t.start)} · {t.players}/{t.max} players</Text>
-                    </View>
-                    <Btn small kind="pri" title="Post" onPress={() => post(t)} />
-                  </View>))}
+              <ScrollView style={{ maxHeight: 440 }} contentContainerStyle={{ gap: 8 }}>
+                {!list.length && <Empty text="No open tournaments on the website right now." />}
+                {list.map(t => {
+                  const full = t.players >= t.max;
+                  const label = t.me === 'joined' ? '✅ In' : t.me === 'reserve' ? '⏳ Reserve' : t.opens ? 'Soon' : full ? 'Reserve list' : 'Sign up';
+                  return (
+                    <View key={t.id} style={styles.row}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.rowName}>{t.name}</Text>
+                        <Text style={styles.rowSub}>{when(t.start)} · {t.players}/{t.max} players{t.opens ? ' · opens ' + when(t.opens) : ''}</Text>
+                      </View>
+                      <Btn small kind={t.me ? 'default' : 'pri'} title={label} onPress={() => Linking.openURL(t.url)} />
+                      {staff && <Btn small title="Post" onPress={() => post(t)} />}
+                    </View>);
+                })}
               </ScrollView>}
             <Btn title="Close" onPress={() => setOpen(false)} />
           </Pressable>
@@ -103,6 +111,7 @@ const styles = themed(C => ({
   btnGhost: { backgroundColor: C.navy2 },
   btnTxt: { color: C.white, fontWeight: '900', fontSize: 15, letterSpacing: 0.5 },
   bar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 9, backgroundColor: C.navy2 },
+  barHot: { backgroundColor: C.orange },
   barTxt: { color: C.white, fontWeight: '800', fontSize: 13 },
   scrim: { flex: 1, backgroundColor: 'rgba(1,10,30,0.6)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: C.panel, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 18, paddingBottom: 34, gap: 12 },

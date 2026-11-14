@@ -14,12 +14,15 @@ export default function MessagesScreen({ onOpen }) {
 
   useEffect(() => {
     if (!searching) return;
-    const t = setTimeout(() => chat.request('users.search', { q }).then(r => setResults(r.list)).catch(() => {}), 250);
+    const t = setTimeout(() => chat.request('players.search', { q }).then(r => setResults(r.list)).catch(() => {}), 300);
     return () => clearTimeout(t);
   }, [q, searching]);
 
   const openUser = async u => {
-    try { const r = await chat.requestHere('dm.open', { userId: u.id }); setSearching(false); setQ(''); onOpen(r.room, r.other); }
+    try {
+      const r = u.dartsmind !== undefined ? await chat.requestHere('dm.player', { id: u.id }) : await chat.requestHere('dm.open', { userId: u.id });
+      setSearching(false); setQ(''); onOpen(r.room, { ...r.other, ...u });
+    }
     catch (e) { showError(e); }
   };
 
@@ -32,13 +35,16 @@ export default function MessagesScreen({ onOpen }) {
         right={<Btn small kind={searching ? 'default' : 'pri'} title={searching ? 'Cancel' : '+ New'} onPress={() => setSearching(!searching)} />} />
       {searching ? (
         <View style={{ flex: 1, padding: 14 }}>
-          <TextInput style={ui.input} placeholder="Search players" placeholderTextColor={C.muted} value={q} onChangeText={setQ} autoFocus autoCapitalize="none" />
+          <TextInput style={ui.input} placeholder="Name or Dartsmind name" placeholderTextColor={C.muted} value={q} onChangeText={setQ} autoFocus autoCapitalize="none" />
           <FlatList data={results} keyExtractor={u => u.id} style={{ marginTop: 10 }}
-            ListEmptyComponent={<Empty text={q ? 'No players found.' : 'Players appear here once they have opened the chat.'} />}
+            ListEmptyComponent={<Empty text={q.trim().length >= 2 ? 'No players found.' : 'Type at least 2 letters of a name or Dartsmind name.'} />}
             renderItem={({ item: u }) => (
               <TouchableOpacity style={styles.row} onPress={() => openUser(u)}>
                 <Avatar user={u} />
-                <Text style={styles.name}>{u.name}</Text><RoleTag user={u} />
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}><Text style={styles.name}>{u.name}</Text><RoleTag user={u} /></View>
+                  {!!u.dartsmind && <Text style={styles.sub}>🎯 {u.dartsmind}</Text>}
+                </View>
                 {u.online && <View style={styles.dot} />}
               </TouchableOpacity>)} />
         </View>

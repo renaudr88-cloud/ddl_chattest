@@ -6,7 +6,7 @@ import { chat, useChat, listHere, RAFFLE_PLATFORM, mentionCount } from '../chat'
 import { PLATFORMS, platformInfo } from '../platforms';
 import { Btn, Header, clock, showError, toast, PlatformLogo, RoomPicker } from '../components';
 import { RaffleGate, RaffleStaffBar } from './Raffle';
-import { PostTournament } from './Tournaments';
+import { OpenTournaments } from './Tournaments';
 import { C, themed, useTheme, setTheme, THEMES, PALETTES } from '../theme';
 import ChatScreen from './ChatScreen';
 import MessagesScreen from './MessagesScreen';
@@ -15,6 +15,7 @@ import SwapScreen from './SwapScreen';
 import HelpScreen from './HelpScreen';
 import AdminScreen from './AdminScreen';
 import MemberSheet from './MemberSheet';
+import Welcome, { welcomeSeen } from './Welcome';
 
 const TABS = [
   ['chat', '#', 'Chat'],
@@ -32,7 +33,9 @@ export default function HomeScreen() {
   const [admin, setAdmin] = useState(false);
   const [sheet, setSheet] = useState(null);    // user
   const [settings, setSettings] = useState(false);
+  const [welcome, setWelcome] = useState(false);
   const theme = useTheme();
+  useEffect(() => { welcomeSeen().then(seen => { if (!seen) setWelcome(true); }); }, []);
 
   // Opened from the brackets on ddl-online.com: ...web.app/?dm=<player id>  → private chat with that player.
   useEffect(() => {
@@ -109,7 +112,7 @@ export default function HomeScreen() {
     } else {
       body = <ChatScreen key={r + st.platform} room={`${r}:${st.platform}`} title={info[0]} subtitle={info[1]} onUser={onUser} right={headerRight}
         below={<>{picker}{r === 'raffle' && isAdmin && <RaffleStaffBar />}
-          {r === 'tournament' && st.platform === 'dartsmind' && isAdmin && st.me?.id?.startsWith('ddl-') && <PostTournament />}
+          {r === 'tournament' && st.platform === 'dartsmind' && st.me?.id?.startsWith('ddl-') && <OpenTournaments staff={isAdmin} />}
           {r === 'tournament' && st.platform === 'dartsmind' && <MyMatches onOpen={openDM} />}</>} />;
     }
   }
@@ -153,7 +156,9 @@ export default function HomeScreen() {
         </View>
       )}
       {sheet && <MemberSheet user={sheet} onClose={() => setSheet(null)} onChat={chatWith} />}
-      <Settings visible={settings} theme={theme} me={st.me} onClose={() => setSettings(false)} onModeration={() => { setSettings(false); setAdmin(true); }} />
+      <Settings visible={settings} theme={theme} me={st.me} onClose={() => setSettings(false)} onModeration={() => { setSettings(false); setAdmin(true); }}
+        onHelp={() => { setSettings(false); setWelcome(true); }} />
+      <Welcome visible={welcome} onClose={() => setWelcome(false)} />
     </View>
   );
 }
@@ -208,7 +213,7 @@ function DartsmindBar({ other }) {
 }
 
 // Settings: app background (DDL blue or white) + log out. The choice is saved on the phone.
-function Settings({ visible, theme, me, onClose, onModeration }) {
+function Settings({ visible, theme, me, onClose, onModeration, onHelp }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.scrim} onPress={onClose}>
@@ -235,6 +240,7 @@ function Settings({ visible, theme, me, onClose, onModeration }) {
                 </TouchableOpacity>);
             })}
           </View>
+          <Btn title="How the chat works" onPress={onHelp} />
           <Btn title="Log out" onPress={() => { onClose(); chat.logout(); }} />
           <Btn title="Close" kind="ghost" onPress={onClose} />
         </Pressable>
