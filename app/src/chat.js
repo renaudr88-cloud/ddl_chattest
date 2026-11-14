@@ -624,19 +624,18 @@ class ChatClient {
       if (u.id === this.uid) fail('not_found', 'That is you.');
       return this.openDM(platform || this.state.platform, u);
     },
-    // Tournaments from ddl-online.com (each with its platform: dartsmind or scolia). Staff post one as a card in the Tournament chat;
+    // Tournaments from ddl-online.com (Dartsmind). Staff post one as a card in the Tournament chat;
     // players sign up on the website's tournament page, where all its checks happen.
     async 'tournaments.list'({ id } = {}) {
       const r = await this.site('chat-tournaments.php' + (id ? '?id=' + encodeURIComponent(id) : ''));
       return { list: r.list || [] };
     },
-    async 'tournament.post'({ id, name, platform }) {
+    async 'tournament.post'({ id, name }) {
       if (this.role !== 'admin') fail('forbidden', 'Staff only.');
       this.canPost();
       const t = { id: Number(id), name: String(name).slice(0, 100) };
       const batch = writeBatch(db);
-      const p = PLATFORMS.some(x => x.key === platform) ? platform : 'dartsmind';   // Scolia tournaments go to the Scolia chat
-      batch.set(doc(collection(db, 'rooms', 'tournament:' + p, 'messages')),
+      batch.set(doc(collection(db, 'rooms', 'tournament:' + RAFFLE_PLATFORM, 'messages')),
         { ...this.mine(), text: '📢 Sign up now: ' + t.name, imageUrl: null, tournament: t, ts: serverTimestamp() });
       await batch.commit();
     },
