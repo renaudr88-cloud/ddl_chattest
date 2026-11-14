@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Modal, Pressable, Linking, Platform } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import { chat, useChat, listHere, RAFFLE_PLATFORM, mentionCount, visibleDms } from '../chat';
+import { chat, useChat, listHere, RAFFLE_PLATFORM, mentionCount, newMatches, visibleDms } from '../chat';
 import { BlockedList } from './Report';
 import { InstallBar, InstallGuide } from './Install';
 import { PLATFORMS, platformInfo } from '../platforms';
@@ -129,7 +129,7 @@ export default function HomeScreen() {
     const hasPremier = st.platform === 'dartsmind' && (isAdmin || st.premier?.member);
     const r = (room === 'raffle' && !hasRaffle) || (room === 'premier' && !hasPremier) ? 'general' : room;
     const pendingRaffle = isAdmin ? (st.raffle?.requests || []).filter(x => x.status === 'pending').length : 0;
-    const tags = k => mentionCount(st, `${k}:${st.platform}`);
+    const tags = k => mentionCount(st, `${k}:${st.platform}`) + (k === 'tournament' ? newMatches(st, st.platform) : 0);
     const rooms = [['general', 'General', tags('general')], ['tournament', 'Tournament', tags('tournament')],
       ...(hasPremier ? [['premier', '🏅 Premier', tags('premier')]] : []),
       ...(hasRaffle ? [['raffle', '🔒 Raffles', pendingRaffle + tags('raffle')]] : [])];
@@ -183,7 +183,7 @@ export default function HomeScreen() {
           {TABS.map(([k, ic, label]) => {
             const badge = k === 'messages' ? unreadDMs + (st.noticesUnread || 0) : k === 'help' && isAdmin ? openHelp
               : k === 'chat' ? (isAdmin ? (st.raffle?.requests || []).filter(x => x.status === 'pending').length : 0)
-                + ['general', 'tournament', 'premier', 'raffle'].reduce((n, r) => n + mentionCount(st, `${r}:${st.platform}`), 0) : 0;
+                + ['general', 'tournament', 'premier', 'raffle'].reduce((n, r) => n + mentionCount(st, `${r}:${st.platform}`), 0) + newMatches(st, st.platform) : 0;
             const on = tab === k;
             return (
               <TouchableOpacity key={k} style={styles.tab} onPress={() => setTab(k)} accessibilityLabel={label}>
@@ -207,19 +207,15 @@ export default function HomeScreen() {
 // with a button straight to a private chat (where the Dartsmind name is ready to copy).
 function MyMatches({ onOpen, platform }) {
   const st = useChat();
-  const [list, setList] = useState([]);
-  useEffect(() => {
-    if (!st.me?.id?.startsWith('ddl-')) return;
-    const load = () => chat.request('matches.mine').then(r => setList(r.list)).catch(() => {});
-    load();
-    const t = setInterval(load, 2 * 60_000);
-    return () => clearInterval(t);
-  }, [st.me?.id]);
+  const list = (st.myMatches || []).filter(m => (m.platform || 'dartsmind') === platform);
+  useEffect(() => { chat.pollMatches(); }, []);   // fresh when the Tournament chat opens (also every 3 minutes, chat.js)
+  const ids = list.map(m => m.match).join(',');
+  useEffect(() => { if (ids) chat.seeMatches(ids.split(',')); }, [ids]);   // seen here: no more red dot
   const open = async m => {
     try { const r = await chat.request('dm.player', { id: m.opponent.id, platform }); onOpen(r.room, { ...r.other, ...m.opponent }); }
     catch (e) { showError(e); }
   };
-  return list.filter(m => (m.platform || 'dartsmind') === platform).map(m => (
+  return list.map(m => (
     <View key={m.match} style={styles.match}>
       <View style={{ flex: 1 }}>
         <Text style={styles.matchSub} numberOfLines={1}>🏆 {m.tournament}{m.round ? ` · Round ${m.round}` : ''}</Text>

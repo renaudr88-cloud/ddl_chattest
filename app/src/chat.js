@@ -23,6 +23,7 @@ import { isInstalled, deviceKind } from './install';
 const TOKEN_KEY = 'ddl-chat-token';       // DDL token for picture uploads (live mode)
 const READ_KEY = 'ddl-chat-read';
 const PLATFORM_KEY = 'ddl-chat-platform';
+const SEEN_MATCHES_KEY = 'ddl-chat-seen-matches';
 const PAGE = 40;                          // messages loaded per room (keeps Firestore reads low)
 const MIN = 60_000;
 const FRIENDLY_MINUTES = 15;              // friendlies disappear after this
@@ -51,6 +52,8 @@ const initial = {
   pins: {},                // room -> pinned message {text, name, messageId, ts} (staff pin one per channel)
   blockedUsers: [],        // players I blocked: [{id, name}] (blocks/{me}); their messages are hidden for me
   reports: [],             // staff: open reports from players (reports/*)
+  myMatches: [],           // my open matches on ddl-online.com: "Your match: vs ..." (php/chat-matches.php)
+  seenMatches: {},         // match id -> true: matches I have seen in the Tournament chat (red dot until then)
 };
 
 // Players I blocked: their messages, private chats, friendlies and listings are hidden for me.
@@ -109,6 +112,8 @@ class ChatClient {
       const [r, p] = await Promise.all([AsyncStorage.getItem(READ_KEY), AsyncStorage.getItem(PLATFORM_KEY)]);
       if (r) this.set({ read: JSON.parse(r) });
       if (P_KEYS.includes(p)) this.set({ platform: p });
+      const sm = await AsyncStorage.getItem(SEEN_MATCHES_KEY);
+      if (sm) this.set({ seenMatches: JSON.parse(sm) });
     } catch {}
     if (!FIREBASE_READY) return false;
     // Firebase remembers who was logged in.
@@ -347,6 +352,11 @@ class ChatClient {
     this.heartbeat();
     clearInterval(this.beat);
     this.beat = setInterval(() => this.heartbeat(), 2 * MIN);
+    // My matches (brackets on ddl-online.com): checked now and every 3 minutes. Asking also lets the website
+    // send "Your match is ready" notifications (php/chat-match-alerts.php).
+    clearInterval(this.matchTimer);
+    this.pollMatches();
+    this.matchTimer = setInterval(() => this.pollMatches(), 3 * MIN);
     // Don't spin forever: if nothing arrives within 10 s, show the "Can't reach the chat" screen.
     clearTimeout(this.connectTimer);
     this.connectTimer = setTimeout(() => { if (this.state.status === 'connecting') this.set({ status: 'offline' }); }, 10000);
@@ -354,7 +364,22 @@ class ChatClient {
   sub(name, off) { this.subs.get(name)?.(); this.subs.set(name, off); }
   stopAll(keep = []) {
     for (const [k, off] of this.subs) if (!keep.includes(k)) { off(); this.subs.delete(k); }
-    if (!keep.length) { clearInterval(this.beat); clearTimeout(this.connectTimer); }
+    if (!keep.length) { clearInterval(this.beat); clearInterval(this.matchTimer); clearTimeout(this.connectTimer); }
+  }
+
+  pollMatches() {
+    if (TEST_MODE || !this.uid?.startsWith('ddl-')) return;
+    this.site('chat-matches.php').then(r => this.set({ myMatches: r.list || [] })).catch(() => {});
+  }
+  // Seen in the Tournament chat: no more red dot for these matches.
+  seeMatches(ids) {
+    const seen = { ...this.state.seenMatches };
+    let changed = false;
+    for (const id of ids) if (!seen[id]) { seen[id] = true; changed = true; }
+    if (!changed) return;
+    const keep = Object.fromEntries(Object.keys(seen).slice(-200).map(k => [k, true]));
+    this.set({ seenMatches: keep });
+    AsyncStorage.setItem(SEEN_MATCHES_KEY, JSON.stringify(keep)).catch(() => {});
   }
 
   watchHelp(p, onErr) {
@@ -648,7 +673,7 @@ class ChatClient {
       const r = await this.site('chat-search.php?q=' + encodeURIComponent(q));
       return { list: r.list || [] };
     },
-    async 'matches.mine'() { const r = await this.site('chat-matches.php'); return { list: r.list || [] }; },
+    async 'matches.mine'() { const r = await this.site('chat-matches.php'); this.set({ myMatches: r.list || [] }); return { list: r.list || [] }; },
     async 'player.get'({ id }) { return { user: await this.player(id) }; },
     // Block / unblock a player for myself: their messages and private chats disappear for me,
     // and they can no longer send me private messages (firestore.rules).
@@ -947,6 +972,9 @@ export const isMuted = me => !!me?.sanction?.muted_until && me.sanction.muted_un
 export const CAN_UPLOAD = true;
 
 // Messages in a room that tag me and that I have not seen yet.
+// Matches of mine on this platform that I have not seen in the Tournament chat yet.
+export const newMatches = (st, platform) => (st.myMatches || []).filter(m => (m.platform || 'dartsmind') === platform && !st.seenMatches?.[m.match]).length;
+
 export const mentionCount = (st, room) => (st.rooms[room] || []).filter(m =>
   m.user.id !== st.me?.id && m.ts > (st.read[room] || 0) && (m.mentions || []).some(x => x.id === st.me?.id)).length;
 

@@ -49,4 +49,9 @@ foreach ($rows as $r) {
         ],
     ];
 }
+// After the answer is sent: "Your match is ready" notifications for everyone (at most once a minute, see chat-match-alerts.php).
+register_shutdown_function(function () {
+    if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+    if (is_file(__DIR__ . '/chat-match-alerts.php')) { require_once __DIR__ . '/chat-match-alerts.php'; chat_match_alerts(chat_db()); }
+});
 chat_json(200, ['list' => $list]);
