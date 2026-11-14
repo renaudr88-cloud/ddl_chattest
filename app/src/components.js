@@ -183,7 +183,7 @@ export const s = themed(C => ({
   pickTxt: { color: C.fg, fontSize: 20, fontWeight: '900', letterSpacing: 1 },
   lightbox: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
   card: { backgroundColor: C.panel, borderWidth: 1, borderColor: C.line, borderRadius: R.lg, padding: 14, gap: 10 },
-  input: { backgroundColor: C.bg, color: C.fg, borderWidth: 1, borderColor: C.line, borderRadius: R.sm + 2, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15 },
+  input: { backgroundColor: C.bg, color: C.fg, borderWidth: 1, borderColor: C.line, borderRadius: R.sm + 2, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
   label: { color: C.muted, fontSize: 11, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 5 },
   section: { color: C.muted, fontSize: 12, fontWeight: '800', letterSpacing: 1.6, textTransform: 'uppercase', marginTop: 18, marginBottom: 10 },
   toast: { position: 'absolute', left: 16, right: 16, bottom: 110, backgroundColor: C.navy2, padding: 12, borderRadius: R.md, borderWidth: 1, borderColor: C.line, zIndex: 99, elevation: 10 },

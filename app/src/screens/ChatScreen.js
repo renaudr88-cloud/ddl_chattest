@@ -297,7 +297,7 @@ const styles = themed(C => ({
   preview: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
   row: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   icon: { width: 44, height: 44, borderRadius: R.md, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg },
-  input: { flex: 1, minHeight: 44, maxHeight: 120, backgroundColor: C.bg, color: C.fg, borderRadius: R.md, borderWidth: 1, borderColor: C.line, paddingHorizontal: 12, paddingTop: 11, paddingBottom: 11, fontSize: 15 },
+  input: { flex: 1, minHeight: 44, maxHeight: 120, backgroundColor: C.bg, color: C.fg, borderRadius: R.md, borderWidth: 1, borderColor: C.line, paddingHorizontal: 12, paddingTop: 11, paddingBottom: 11, fontSize: 16 },
   send: { height: 44, paddingHorizontal: 16, borderRadius: R.md, backgroundColor: C.orange, alignItems: 'center', justifyContent: 'center' },
   sendTxt: { color: C.white, fontWeight: '900', letterSpacing: 1.5 },
 }));

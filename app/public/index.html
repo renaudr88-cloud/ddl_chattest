@@ -29,6 +29,8 @@
         height: 100%;
         flex: 1;
       }
+      /* iPhone zooms in on a text box with letters smaller than 16px: keep every input at 16px or more */
+      input, textarea, select { font-size: max(16px, 1em) !important; }
     </style>
   </head>
 
