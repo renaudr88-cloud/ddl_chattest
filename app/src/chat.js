@@ -18,6 +18,7 @@ import { PLATFORMS } from './platforms';
 import { hasBad, isQuestion } from './filter';
 import { toast } from './components';
 import { ping, visible } from './sound';
+import { isInstalled, deviceKind } from './install';
 
 const TOKEN_KEY = 'ddl-chat-token';       // DDL token for picture uploads (live mode)
 const READ_KEY = 'ddl-chat-read';
@@ -170,8 +171,10 @@ class ChatClient {
     }
   }
   saveProfile() {
+    // device / installed / push: only for the staff usage numbers (Moderation → Stats).
     return setDoc(doc(db, 'users', this.uid), {
       name: this.name, nameLower: this.name.toLowerCase(), role: this.role, avatar: this.avatar || null, lastSeen: serverTimestamp(),
+      device: deviceKind(), installed: !!isInstalled(), push: !!this.pushOn,
     });
   }
   heartbeat() {
@@ -710,6 +713,26 @@ class ChatClient {
       return r;
     },
 
+    // Staff: how many people use the chat (count queries: cheap, no documents are read).
+    async 'admin.stats'() {
+      if (this.role !== 'admin') fail('forbidden', 'Staff only.');
+      const users = collection(db, 'users');
+      const count = q => getCountFromServer(q).then(c => c.data().count).catch(() => null);
+      const since = h => Timestamp.fromMillis(Date.now() - h * 3600 * 1000);
+      const [total, online, today, week, month, installed, push, ios, android, desktop] = await Promise.all([
+        count(users),
+        count(query(users, where('lastSeen', '>', Timestamp.fromMillis(Date.now() - 5 * MIN)))),
+        count(query(users, where('lastSeen', '>', since(24)))),
+        count(query(users, where('lastSeen', '>', since(24 * 7)))),
+        count(query(users, where('lastSeen', '>', since(24 * 30)))),
+        count(query(users, where('installed', '==', true))),
+        count(query(users, where('push', '==', true))),
+        count(query(users, where('device', '==', 'ios'))),
+        count(query(users, where('device', '==', 'android'))),
+        count(query(users, where('device', '==', 'desktop'))),
+      ]);
+      return { total, online, today, week, month, installed, push, devices: { ios, android, desktop } };
+    },
     async 'admin.members'() {
       if (this.role !== 'admin') fail('forbidden', 'Staff only.');
       const [users, sanctions] = await Promise.all([

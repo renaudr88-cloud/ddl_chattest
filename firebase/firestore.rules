@@ -4,7 +4,7 @@ rules_version = '2';
 // These rules ARE the server: they decide who may read and write what. The app only mirrors them.
 //
 // Data
-//   users/{uid}                          name, nameLower, role, avatar, lastSeen
+//   users/{uid}                          name, nameLower, role, avatar, lastSeen, device (ios|android|desktop), installed, push
 //   rooms/{room}/messages/{id}           room = "general:<platform>", "tournament:<platform>" or "dm:<platform>:<uidA>:<uidB>" 
 //   dms/{room}                           one per private chat: members, users{uid:{name,role}}, lastAt, lastBy
 //   platforms/{p}/friendlies/{id}        "looking for a friendly" cards
@@ -103,7 +103,10 @@ service cloud.firestore {
       allow read: if signedIn();
       // A DDL login must use the name from its token; in test mode the player picks a name.
       allow create, update: if signedIn() && uid == me()
-        && request.resource.data.keys().hasOnly(['name', 'nameLower', 'role', 'avatar', 'lastSeen'])
+        && request.resource.data.keys().hasOnly(['name', 'nameLower', 'role', 'avatar', 'lastSeen', 'device', 'installed', 'push'])
+        // For the staff usage numbers: which kind of device, installed as an app, notifications on.
+        && request.resource.data.get('device', 'desktop') in ['ios', 'android', 'desktop']
+        && request.resource.data.get('installed', false) is bool && request.resource.data.get('push', false) is bool
         && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 30
         && request.resource.data.name == request.auth.token.get('ddlName', request.resource.data.name)
         && request.resource.data.nameLower == request.resource.data.name.lower()

@@ -250,6 +250,7 @@ function usePush(me) {
   const [status, setStatus] = useState(null);   // on | off | blocked | homescreen | unsupported
   const ddl = !!me?.id?.startsWith('ddl-');
   useEffect(() => { if (ddl) { pushBoot(); pushStatus().then(setStatus); } }, [ddl]);
+  useEffect(() => { if (status) chat.pushOn = status === 'on'; }, [status]);   // for the staff usage numbers
   return [ddl ? status : 'unsupported', setStatus];
 }
 const PUSH_TEXT = {
