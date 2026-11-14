@@ -1,8 +1,8 @@
 // Private chats list + start a new one.
 import { useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, TextInput, Image, Linking } from 'react-native';
-import { chat, useChat, blockedSet } from '../chat';
-import { Avatar, Header, Empty, RoleTag, Btn, timeLabel, s as ui, showError } from '../components';
+import { chat, useChat, visibleDms } from '../chat';
+import { Avatar, Header, Empty, RoleTag, Btn, timeLabel, s as ui, showError, toast } from '../components';
 import { C, R, themed } from '../theme';
 import { usePlayerSearch, SearchStatus } from './Premier';
 
@@ -47,7 +47,7 @@ export default function MessagesScreen({ onOpen }) {
               </TouchableOpacity>)} />
         </View>
       ) : (
-        <FlatList data={st.dms.filter(d => d.platform === st.platform && !blockedSet(st).has(d.other.id))} keyExtractor={d => d.room}
+        <FlatList data={visibleDms(st).filter(d => d.platform === st.platform)} keyExtractor={d => d.room}
           ListHeaderComponent={showNotices && (
             <TouchableOpacity style={styles.row} onPress={() => setNotices(true)} accessibilityLabel="DDL notifications">
               <Image source={require('../../assets/ddl-logo.png')} style={{ width: 44, height: 44, borderRadius: 22 }} />
@@ -70,11 +70,26 @@ export default function MessagesScreen({ onOpen }) {
                   <Text style={styles.sub}>{timeLabel(d.lastAt)}</Text>
                 </View>
                 {unread ? <View style={styles.badge}><Text style={styles.badgeTxt}>new</Text></View> : null}
+                <DeleteChat d={d} />
               </TouchableOpacity>);
           }} />
       )}
     </View>
   );
+}
+
+// 🗑 on a private chat: tap, then tap "Delete" to confirm. Only for me; the other player keeps the chat.
+function DeleteChat({ d }) {
+  const [armed, setArmed] = useState(false);
+  const go = () => {
+    if (!armed) { setArmed(true); setTimeout(() => setArmed(false), 4000); return; }
+    chat.request('dm.hide', { room: d.room }).then(() => toast(`Chat with ${d.other.name} deleted.`)).catch(showError);
+  };
+  return (
+    <TouchableOpacity onPress={go} hitSlop={8} accessibilityLabel={`Delete chat with ${d.other.name}`}
+      style={[styles.del, armed && styles.delOn]}>
+      <Text style={[styles.delTxt, armed && { color: '#fff' }]}>{armed ? 'Delete' : '🗑'}</Text>
+    </TouchableOpacity>);
 }
 
 // The website's notifications (same as ddl-online.com/notifications.php). Opening them marks them as read.
@@ -100,6 +115,9 @@ const links = text => String(text).split(/(https?:\/\/[^\s]+)/).map((p, i) => /^
   ? <Text key={i} style={styles.link} onPress={() => Linking.openURL(p)}>{p}</Text> : p);
 
 const styles = themed(C => ({
+  del: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: C.line },
+  delOn: { backgroundColor: C.bad, borderColor: C.bad },
+  delTxt: { color: C.muted, fontWeight: '800', fontSize: 13 },
   notice: { backgroundColor: C.panel, borderRadius: R.md, borderLeftWidth: 4, borderLeftColor: C.orange, padding: 12, gap: 4 },
   noticeNew: { borderWidth: 1, borderColor: C.orange },
   noticeTitle: { color: C.fg, fontSize: 15, fontWeight: '800' },

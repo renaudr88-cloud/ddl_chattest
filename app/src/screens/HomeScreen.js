@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Modal, Pressable, Linking, Platform } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import { chat, useChat, listHere, RAFFLE_PLATFORM, mentionCount, blockedSet } from '../chat';
+import { chat, useChat, listHere, RAFFLE_PLATFORM, mentionCount, visibleDms } from '../chat';
 import { BlockedList } from './Report';
 import { InstallBar, InstallGuide } from './Install';
 import { PLATFORMS, platformInfo } from '../platforms';
@@ -93,7 +93,7 @@ export default function HomeScreen() {
   const isAdmin = st.me?.role === 'admin';
   const here = platformInfo(st.platform);
   // Per platform: unread private chats, and open help questions for staff
-  const unreadOn = p => st.dms.filter(d => d.platform === p && chat.unread(d) && !blockedSet(st).has(d.other.id)).length;
+  const unreadOn = p => visibleDms(st).filter(d => d.platform === p && chat.unread(d)).length;
   const openHelpOn = p => isAdmin ? (st.help[p] || []).filter(h => h.status === 'open').length : 0;
   const unreadDMs = unreadOn(st.platform);
   // Web: "(3) DDL Chat" in the browser tab when something is waiting for me.

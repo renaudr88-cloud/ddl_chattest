@@ -47,12 +47,18 @@ const initial = {
   raffle: { status: null, requests: [] },
   premier: { member: false, members: [] },  // Premier League chat: am I in it; staff: everyone in it // my raffle access (null|pending|approved|declined|removed); staff: all requests
   blocked: null,           // {reason:'banned'|'kicked', until}
+  hiddenDms: {},           // private chats I deleted: room -> time (ms); they come back when a newer message arrives
   blockedUsers: [],        // players I blocked: [{id, name}] (blocks/{me}); their messages are hidden for me
   reports: [],             // staff: open reports from players (reports/*)
 };
 
 // Players I blocked: their messages, private chats, friendlies and listings are hidden for me.
 export const blockedSet = st => new Set((st.blockedUsers || []).map(u => u.id));
+// Private chats to show: not with players I blocked, not the ones I deleted (unless a newer message came in).
+export const visibleDms = st => {
+  const hide = blockedSet(st), gone = st.hiddenDms || {};
+  return st.dms.filter(d => !hide.has(d.other.id) && !(gone[d.room] && d.lastAt <= gone[d.room]));
+};
 export const REPORT_REASONS = ['Spam', 'Insults or abuse', 'Cheating', 'Inappropriate picture', 'Other'];
 
 class Fail extends Error { constructor(code, message) { super(message); this.code = code; } }
@@ -274,6 +280,10 @@ class ChatClient {
     this.sub('blocksMine', onSnapshot(doc(db, 'blocks', this.uid), s => {
       const users = s.exists() ? s.data().users || {} : {};
       this.set({ blockedUsers: Object.entries(users).map(([id, name]) => ({ id, name: String(name || 'Player') })) });
+    }, () => {}));
+    // Private chats I deleted (only I can read or change this).
+    this.sub('prefsMine', onSnapshot(doc(db, 'prefs', this.uid), s => {
+      this.set({ hiddenDms: (s.exists() && s.data().hiddenDms) || {} });
     }, () => {}));
     // Staff: open reports from players.
     if (this.role === 'admin') {
@@ -592,6 +602,15 @@ class ChatClient {
         users[user.id] = String(user.name || 'Player').slice(0, 30);
       } else delete users[user.id];
       await setDoc(doc(db, 'blocks', this.uid), { users });
+    },
+    // Delete a private chat for me: it disappears from my list and its messages are hidden for me.
+    // The other player keeps it. A new message brings the chat back, with only the new messages.
+    async 'dm.hide'({ room }) {
+      if (!String(room).startsWith('dm:')) fail('bad_input', 'Only private chats can be deleted.');
+      const hidden = { ...(this.state.hiddenDms || {}), [room]: Date.now() };
+      const keys = Object.keys(hidden);
+      if (keys.length > 400) for (const k of keys.sort((a, b) => hidden[a] - hidden[b]).slice(0, keys.length - 400)) delete hidden[k];
+      await setDoc(doc(db, 'prefs', this.uid), { hiddenDms: hidden });
     },
     // Report a player or a message to DDL staff.
     async report({ user, room, message, reason, note }) {

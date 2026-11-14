@@ -16,6 +16,7 @@ rules_version = '2';
 //   premierMembers/{uid}                 Premier League chat (Dartsmind): players staff added {name, by, ts}
 //   staff/{uid}                          chat staff: made by a DDL admin {name, by, ts} (or test staff code)
 //   blocks/{uid}                         players this player blocked: { users: { <uid>: <name> } } (only they can read it)
+//   prefs/{uid}                          my settings: { hiddenDms: { <room>: <time> } } private chats I deleted (only me)
 //   reports/{id}                         a player reports a player or message to staff: by, targetId, reason, status open|handled|dismissed
 //   config/staff                         test mode only: { code: "..." } (set in the console, unreadable for the app)
 //
@@ -245,6 +246,13 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['users']) && request.resource.data.users is map
         && request.resource.data.users.size() <= 200;
       allow delete: if signedIn() && uid == me();
+    }
+    // My own settings: private chats I deleted { hiddenDms: { <room>: <time ms> } }. Only I can read or change them.
+    match /prefs/{uid} {
+      allow read, delete: if signedIn() && uid == me();
+      allow create, update: if signedIn() && uid == me()
+        && request.resource.data.keys().hasOnly(['hiddenDms']) && request.resource.data.hiddenDms is map
+        && request.resource.data.hiddenDms.size() <= 400;
     }
     match /reports/{id} {
       allow read: if isAdmin();

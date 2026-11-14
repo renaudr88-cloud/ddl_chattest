@@ -37,7 +37,9 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
 
   // Messages from players I blocked are not shown.
   const hide = useMemo(() => blockedSet(st), [st.blockedUsers]);
-  const data = useMemo(() => (list ? [...list].filter(m => !hide.has(m.user.id)).reverse() : []), [list, hide]);
+  // A private chat I deleted: only the messages after that moment.
+  const since = (st.hiddenDms || {})[room] || 0;
+  const data = useMemo(() => (list ? [...list].filter(m => !hide.has(m.user.id) && !(since && m.ts <= since)).reverse() : []), [list, hide, since]);
 
   // People who recently talked here come first in the @ list; the rest is found by name.
   const recent = useMemo(() => {
