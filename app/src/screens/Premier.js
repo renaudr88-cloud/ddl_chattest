@@ -5,19 +5,35 @@ import { chat, useChat } from '../chat';
 import { Avatar, Btn, toast, showError, s as ui } from '../components';
 import { C, themed } from '../theme';
 
+// Search all DDL players (ddl-online.com, php/chat-search.php) while staff type: 2+ letters.
+export function usePlayerSearch(q, active) {
+  const [found, setFound] = useState([]);
+  const [status, setStatus] = useState('');   // '' | searching | done | error:<message>
+  useEffect(() => {
+    if (!active || q.trim().length < 2) { setFound([]); setStatus(''); return; }
+    setStatus('searching');
+    const t = setTimeout(() => chat.request('players.search', { q })
+      .then(r => { setFound(r.list || []); setStatus('done'); })
+      .catch(e => { setFound([]); setStatus('error:' + (e?.message || 'Search failed.')); }), 300);
+    return () => clearTimeout(t);
+  }, [q, active]);
+  return { found, status };
+}
+export function SearchStatus({ q, status, count }) {
+  if (q.trim().length === 1) return <Text style={{ color: C.muted }}>Type at least 2 letters…</Text>;
+  if (status === 'searching') return <Text style={{ color: C.muted }}>Searching…</Text>;
+  if (status.startsWith('error:')) return <Text style={{ color: C.bad }}>Could not search: {status.slice(6)}</Text>;
+  if (status === 'done' && !count) return <Text style={{ color: C.muted }}>No players found for “{q.trim()}”.</Text>;
+  return null;
+}
+
 export function PremierStaffBar() {
   const st = useChat();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
-  const [found, setFound] = useState([]);
   const members = st.premier?.members || [];
   const isIn = id => members.some(m => m.id === id);
-
-  useEffect(() => {
-    if (!open || q.trim().length < 2) { setFound([]); return; }
-    const t = setTimeout(() => chat.request('players.search', { q }).then(r => setFound(r.list)).catch(() => {}), 300);
-    return () => clearTimeout(t);
-  }, [q, open]);
+  const { found, status } = usePlayerSearch(q, open);
 
   const add = async u => {
     try { await chat.request('premier.add', { user: { id: u.id, name: u.name } }); toast(`${u.name} is now in the Premier League chat.`); setQ(''); }
@@ -42,6 +58,7 @@ export function PremierStaffBar() {
             <TextInput style={ui.input} placeholder="Add a player: name or Dartsmind name" placeholderTextColor={C.muted}
               value={q} onChangeText={setQ} autoCapitalize="none" />
             <ScrollView style={{ maxHeight: 420 }} contentContainerStyle={{ gap: 2 }} keyboardShouldPersistTaps="handled">
+              <SearchStatus q={q} status={status} count={found.length} />
               {found.map(u => (
                 <View key={u.id} style={styles.row}>
                   <Avatar user={u} size={32} />

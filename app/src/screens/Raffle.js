@@ -1,9 +1,11 @@
 // Raffle chat (Dartsmind only): players ask for access, staff approve or decline.
 import { useState } from 'react';
-import { View, Text, ScrollView, Modal, Pressable, TouchableOpacity } from 'react-native';
+import { View, Text, TextInput, ScrollView, Modal, Pressable, TouchableOpacity } from 'react-native';
 import { chat, useChat } from '../chat';
 import { Btn, Header, Empty, timeLabel, toast, showError, s as ui } from '../components';
 import { C, themed } from '../theme';
+import { usePlayerSearch, SearchStatus } from './Premier';
+import { Avatar } from '../components';
 
 // What a player sees before staff let them in.
 export function RaffleGate({ header }) {
@@ -42,6 +44,11 @@ export function RaffleStaffBar() {
   const pending = requests.filter(r => r.status === 'pending');
   const approved = requests.filter(r => r.status === 'approved');
   const decide = (uid, status) => chat.request('raffle.decide', { uid, status }).catch(showError);
+  const [q, setQ] = useState('');
+  const { found, status: searchStatus } = usePlayerSearch(q, open);
+  const statusOf = id => requests.find(r => r.id === id)?.status;
+  const grant = u => chat.request('raffle.grant', { user: { id: u.id, name: u.name } })
+    .then(() => { toast(`${u.name} has raffle access.`); setQ(''); }).catch(showError);
   return (
     <>
       <TouchableOpacity onPress={() => setOpen(true)} style={[styles.bar, pending.length && styles.barHot]} accessibilityRole="button">
@@ -54,7 +61,19 @@ export function RaffleStaffBar() {
         <Pressable style={styles.scrim} onPress={() => setOpen(false)}>
           <Pressable style={styles.sheet} onPress={() => {}}>
             <Text style={styles.title}>Raffle access</Text>
-            <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ gap: 8 }}>
+            <TextInput style={ui.input} placeholder="Give a player access: name or Dartsmind name" placeholderTextColor={C.muted}
+              value={q} onChangeText={setQ} autoCapitalize="none" />
+            <ScrollView style={{ maxHeight: 460 }} contentContainerStyle={{ gap: 8 }} keyboardShouldPersistTaps="handled">
+              {q.trim().length > 0 && <>
+                <SearchStatus q={q} status={searchStatus} count={found.length} />
+                {found.map(u => (
+                  <View key={u.id} style={styles.row}>
+                    <Avatar user={u} size={30} />
+                    <View style={{ flex: 1 }}><Text style={styles.name}>{u.name}</Text>{!!u.dartsmind && <Text style={styles.sub}>🎯 {u.dartsmind}</Text>}</View>
+                    {statusOf(u.id) === 'approved' ? <Text style={styles.sub}>✅ Has access</Text> : <Btn small kind="pri" title="Give access" onPress={() => grant(u)} />}
+                  </View>))}
+              </>}
+              {q.trim().length === 0 && <>
               <Text style={[ui.section, { marginTop: 0, marginBottom: 2 }]}>Waiting · {pending.length}</Text>
               {!pending.length && <Text style={{ color: C.muted }}>No open requests.</Text>}
               {pending.map(r => (
@@ -69,6 +88,7 @@ export function RaffleStaffBar() {
                   <Text style={[styles.name, { flex: 1 }]}>{r.name}</Text>
                   <Btn small kind="danger" title="Remove" onPress={() => decide(r.id, 'removed')} />
                 </View>))}
+              </>}
             </ScrollView>
             <Btn title="Close" onPress={() => setOpen(false)} />
           </Pressable>

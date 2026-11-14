@@ -4,19 +4,16 @@ import { View, Text, FlatList, TouchableOpacity, TextInput, Image, Linking } fro
 import { chat, useChat } from '../chat';
 import { Avatar, Header, Empty, RoleTag, Btn, timeLabel, s as ui, showError } from '../components';
 import { C, R, themed } from '../theme';
+import { usePlayerSearch, SearchStatus } from './Premier';
 
 export default function MessagesScreen({ onOpen }) {
   const st = useChat();
   const [searching, setSearching] = useState(false);
   const [q, setQ] = useState('');
-  const [results, setResults] = useState([]);
+
   const [notices, setNotices] = useState(false);
 
-  useEffect(() => {
-    if (!searching) return;
-    const t = setTimeout(() => chat.request('players.search', { q }).then(r => setResults(r.list)).catch(() => {}), 300);
-    return () => clearTimeout(t);
-  }, [q, searching]);
+  const { found: results, status: searchStatus } = usePlayerSearch(q, searching);
 
   const openUser = async u => {
     try {
@@ -37,7 +34,8 @@ export default function MessagesScreen({ onOpen }) {
         <View style={{ flex: 1, padding: 14 }}>
           <TextInput style={ui.input} placeholder="Name or Dartsmind name" placeholderTextColor={C.muted} value={q} onChangeText={setQ} autoFocus autoCapitalize="none" />
           <FlatList data={results} keyExtractor={u => u.id} style={{ marginTop: 10 }}
-            ListEmptyComponent={<Empty text={q.trim().length >= 2 ? 'No players found.' : 'Type at least 2 letters of a name or Dartsmind name.'} />}
+            ListEmptyComponent={q.trim().length >= 2 ? <View style={{ padding: 6 }}><SearchStatus q={q} status={searchStatus} count={0} /></View>
+              : <Empty text="Type at least 2 letters of a name or Dartsmind name." />}
             renderItem={({ item: u }) => (
               <TouchableOpacity style={styles.row} onPress={() => openUser(u)}>
                 <Avatar user={u} />
