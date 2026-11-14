@@ -29,6 +29,7 @@ const P_KEYS = PLATFORMS.map(p => p.key);
 export const REACTIONS = ['👍', '🎯', '🔥', '😂', '👏', '💯'];   // keep in line with firebase/firestore.rules
 export const RAFFLE_PLATFORM = 'dartsmind';             // raffles only exist on Dartsmind
 const RAFFLE_ROOM = 'raffle:' + RAFFLE_PLATFORM;
+export const PREMIER_ROOM = 'premier:dartsmind';          // Premier League chat: staff put players in it
 
 const initial = {
   status: 'idle',          // idle | connecting | online | offline
@@ -42,7 +43,8 @@ const initial = {
   friendlies: {}, swap: {}, help: {}, // per platform: { dartsmind: [...], scolia: [...] }
   members: [], log: [],
   notices: [], noticesUnread: 0,   // the website's notifications (ddl-online.com, php/chat-notifications.php)
-  raffle: { status: null, requests: [] }, // my raffle access (null|pending|approved|declined|removed); staff: all requests
+  raffle: { status: null, requests: [] },
+  premier: { member: false, members: [] },  // Premier League chat: am I in it; staff: everyone in it // my raffle access (null|pending|approved|declined|removed); staff: all requests
   blocked: null,           // {reason:'banned'|'kicked', until}
 };
 
@@ -136,7 +138,7 @@ class ChatClient {
     this.stopAll();
     try { await signOut(auth); } catch {}
     await AsyncStorage.removeItem(TOKEN_KEY).catch(() => {});
-    this.older = {}; this.cursor = {}; this.live = {}; this.noticesAt = 0; this.players = null; this.dmsSeen = null; this.noticeTop = undefined;
+    this.older = {}; this.cursor = {}; this.live = {}; this.noticesAt = 0; this.players = null; this.dmsSeen = null; this.noticeTop = undefined; this.premierWas = undefined;
     this.set({ ...initial, status: 'idle', platform: this.state.platform, read: this.state.read });
   }
 
@@ -258,6 +260,22 @@ class ChatClient {
       this.saveProfile().catch(() => {});
       this.connect();
     }, () => {}));
+
+    // Premier League chat (Dartsmind): only players staff put in it, and staff. Invisible for everyone else.
+    this.sub('premierMine', onSnapshot(doc(db, 'premierMembers', this.uid), s => {
+      const member = s.exists();
+      if (this.premierWas === false && member) toast('You were added to the Premier League chat. 🏅');
+      this.premierWas = member;
+      this.set(st => ({ premier: { ...st.premier, member } }));
+      if (member || this.role === 'admin') this.watchRoom(PREMIER_ROOM);
+      else { this.subs.get('room:' + PREMIER_ROOM)?.(); this.subs.delete('room:' + PREMIER_ROOM); this.set(st => { const rooms = { ...st.rooms }; delete rooms[PREMIER_ROOM]; return { rooms }; }); }
+    }, onErr));
+    if (this.role === 'admin') {
+      this.sub('premierAll', onSnapshot(query(collection(db, 'premierMembers'), limit(300)), s => {
+        const members = s.docs.map(d => ({ id: d.id, name: d.data().name })).sort((a, b) => a.name.localeCompare(b.name));
+        this.set(st => ({ premier: { ...st.premier, members } }));
+      }, onErr));
+    }
 
     // Raffle chat (Dartsmind only): players need staff approval. Staff see every request.
     this.sub('raffleMine', onSnapshot(doc(db, 'raffleAccess', this.uid), s => {
@@ -445,6 +463,16 @@ class ChatClient {
       const cur = await getDoc(ref);
       if (cur.exists()) await updateDoc(ref, { status: 'pending', ts: serverTimestamp() });
       else await setDoc(ref, { name: this.name, status: 'pending', ts: serverTimestamp() });
+    },
+    async 'premier.add'({ user }) {
+      if (this.role !== 'admin') fail('forbidden', 'Staff only.');
+      await setDoc(doc(db, 'premierMembers', user.id), { name: String(user.name).slice(0, 30), by: this.uid, ts: serverTimestamp() });
+      await this.log('premier_add', user, '');
+    },
+    async 'premier.remove'({ user }) {
+      if (this.role !== 'admin') fail('forbidden', 'Staff only.');
+      await deleteDoc(doc(db, 'premierMembers', user.id));
+      await this.log('premier_remove', user, '');
     },
     async 'raffle.decide'({ uid, status }) {
       if (this.role !== 'admin') fail('forbidden', 'Staff only.');

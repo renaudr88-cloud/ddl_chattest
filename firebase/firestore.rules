@@ -13,6 +13,7 @@ rules_version = '2';
 //   sanctions/{uid}                      mutedUntil, kickedUntil (timestamps), banned
 //   raffleAccess/{uid}                   raffle chat access: name, status pending|approved|declined|removed
 //   modlog/{id}                          staff actions
+//   premierMembers/{uid}                 Premier League chat (Dartsmind): players staff added {name, by, ts}
 //   staff/{uid}                          chat staff: made by a DDL admin {name, by, ts} (or test staff code)
 //   config/staff                         test mode only: { code: "..." } (set in the console, unreadable for the app)
 //
@@ -72,7 +73,7 @@ service cloud.firestore {
     function roomOk(room) {
       let p = room.split(':');
       return (p.size() == 2 && p[0] in ['general', 'tournament'] && inPlatforms(p[1]))
-        || (p.size() == 2 && p[0] == 'raffle' && p[1] == 'dartsmind')
+        || (p.size() == 2 && p[0] in ['raffle', 'premier'] && p[1] == 'dartsmind')
         || (p.size() == 4 && p[0] == 'dm' && inPlatforms(p[1]) && p[2] < p[3] && (p[2] == me() || p[3] == me()));
     }
 
@@ -81,7 +82,12 @@ service cloud.firestore {
       return isAdmin() || (exists(/databases/$(database)/documents/raffleAccess/$(me()))
         && get(/databases/$(database)/documents/raffleAccess/$(me())).data.status == 'approved');
     }
-    function roomAccess(room) { return room.split(':')[0] != 'raffle' || raffleApproved(); }
+    // Premier League chat: only staff and the players staff put in it (premierMembers/{uid}).
+    function premierMember() { return isAdmin() || exists(/databases/$(database)/documents/premierMembers/$(me())); }
+    function roomAccess(room) {
+      let kind = room.split(':')[0];
+      return (kind != 'raffle' || raffleApproved()) && (kind != 'premier' || premierMember());
+    }
 
     // ---------- users ----------
     match /users/{uid} {
@@ -193,6 +199,15 @@ service cloud.firestore {
     }
 
     // ---------- raffle access requests ----------
+    match /premierMembers/{uid} {
+      // Staff add and remove players; a player only sees whether they are in.
+      allow read: if signedIn() && (uid == me() || isAdmin());
+      allow create: if isAdmin() && request.resource.data.keys().hasOnly(['name', 'by', 'ts'])
+        && request.resource.data.name is string && request.resource.data.name.size() <= 30
+        && request.resource.data.by == me() && request.resource.data.ts == request.time;
+      allow delete: if isAdmin();
+    }
+
     match /raffleAccess/{uid} {
       allow read: if signedIn() && (uid == me() || isAdmin());
       // A player asks for access (again after a refusal); staff approve, decline or remove.

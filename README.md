@@ -101,6 +101,7 @@ A link `https://ddl-chat-858ec.web.app/?dm=12` opens a private chat with player 
 | `platforms/{p}/friendlies/{id}` | FT3 / FT5 / Other cards, status open / matched / cancelled |
 | `platforms/{p}/swap/{id}` | Sell / Swap / Wanted, status open / done / deleted |
 | `platforms/{p}/help/{id}` | question, status open / solved / deleted, answers[] |
+| `premierMembers/{uid}` | Premier League chat (`premier:dartsmind`): players staff put in it |
 | `raffleAccess/{uid}` | raffle chat access request: name, status pending / approved / declined / removed |
 | `sanctions/{uid}` | mutedUntil, kickedUntil, banned (written by staff) |
 | `modlog/{id}` | staff actions |
@@ -116,6 +117,7 @@ Platforms: `app/src/platforms.js` and `platforms()` in `firebase/firestore.rules
 - Names: a DDL login always uses the name from its token, so nobody can post as someone else.
 - Private chats: only the two members can read them.
 - Raffle chat (`raffle:dartsmind`): only staff and players whose access request staff approved.
+- Premier League chat (`premier:dartsmind`): only staff and the players staff added; others don't see it.
 - Help desk: players see their own questions and the solved ones; only staff answer.
 - Staff = admins of ddl-online.com (`is_admin = 1`), plus players a DDL admin made chat staff in the app.
 - Staff can delete messages and listings, mute, kick and ban; staff cannot sanction staff.

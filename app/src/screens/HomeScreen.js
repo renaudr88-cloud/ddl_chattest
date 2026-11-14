@@ -7,6 +7,7 @@ import { PLATFORMS, platformInfo } from '../platforms';
 import { Btn, Header, clock, showError, toast, PlatformLogo, RoomPicker } from '../components';
 import { RaffleGate, RaffleStaffBar } from './Raffle';
 import { OpenTournaments } from './Tournaments';
+import { PremierStaffBar } from './Premier';
 import { C, themed, useTheme, setTheme, THEMES, PALETTES } from '../theme';
 import ChatScreen from './ChatScreen';
 import MessagesScreen from './MessagesScreen';
@@ -29,7 +30,7 @@ const TABS = [
 export default function HomeScreen() {
   const st = useChat();
   const [tab, setTab] = useState('chat');
-  const [room, setRoom] = useState('general');  // chat tab: general | tournament | raffle
+  const [room, setRoom] = useState('general');  // chat tab: general | tournament | premier | raffle
   const [dm, setDm] = useState(null);          // {room, other}
   const [admin, setAdmin] = useState(false);
   const [sheet, setSheet] = useState(null);    // user
@@ -82,7 +83,7 @@ export default function HomeScreen() {
   const unreadDMs = unreadOn(st.platform);
   // Web: "(3) DDL Chat" in the browser tab when something is waiting for me.
   const waiting = PLATFORMS.reduce((n, p) => n + unreadOn(p.key), 0) + (st.noticesUnread || 0)
-    + PLATFORMS.reduce((n, p) => n + ['general', 'tournament', 'raffle'].reduce((k, r) => k + mentionCount(st, `${r}:${p.key}`), 0), 0);
+    + PLATFORMS.reduce((n, p) => n + ['general', 'tournament', 'premier', 'raffle'].reduce((k, r) => k + mentionCount(st, `${r}:${p.key}`), 0), 0);
   if (Platform.OS === 'web' && typeof document !== 'undefined') document.title = (waiting ? `(${waiting}) ` : '') + 'DDL Chat';
   const openHelp = openHelpOn(st.platform);
   const switchPlatform = p => { setDm(null); chat.setPlatform(p); };
@@ -101,22 +102,25 @@ export default function HomeScreen() {
   else if (admin) body = <AdminScreen onBack={() => setAdmin(false)} onUser={setSheet} />;
   else if (tab === 'chat') {
     const hasRaffle = st.platform === RAFFLE_PLATFORM;
-    const r = room === 'raffle' && !hasRaffle ? 'general' : room;
+    const hasPremier = st.platform === 'dartsmind' && (isAdmin || st.premier?.member);
+    const r = (room === 'raffle' && !hasRaffle) || (room === 'premier' && !hasPremier) ? 'general' : room;
     const pendingRaffle = isAdmin ? (st.raffle?.requests || []).filter(x => x.status === 'pending').length : 0;
     const tags = k => mentionCount(st, `${k}:${st.platform}`);
     const rooms = [['general', 'General', tags('general')], ['tournament', 'Tournament', tags('tournament')],
+      ...(hasPremier ? [['premier', '🏅 Premier', tags('premier')]] : []),
       ...(hasRaffle ? [['raffle', '🔒 Raffles', pendingRaffle + tags('raffle')]] : [])];
     const info = {
       general: ['General chat', `${here.name} community. Keep it friendly.`],
       tournament: ['Tournament', `${here.name} tournaments: draws, results, who plays next.`],
       raffle: ['Raffles', 'Dartsmind raffles, for approved players.'],
+      premier: ['Premier League', 'Premier League players and DDL staff only.'],
     }[r];
     const picker = <RoomPicker rooms={rooms} value={r} onChange={setRoom} />;
     if (r === 'raffle' && !isAdmin && st.raffle?.status !== 'approved') {
       body = <RaffleGate header={<><Header title={info[0]} subtitle={info[1]} right={headerRight} />{picker}</>} />;
     } else {
       body = <ChatScreen key={r + st.platform} room={`${r}:${st.platform}`} title={info[0]} subtitle={info[1]} onUser={onUser} right={headerRight}
-        below={<>{picker}{r === 'raffle' && isAdmin && <RaffleStaffBar />}
+        below={<>{picker}{r === 'raffle' && isAdmin && <RaffleStaffBar />}{r === 'premier' && isAdmin && <PremierStaffBar />}
           {r === 'tournament' && st.platform === 'dartsmind' && st.me?.id?.startsWith('ddl-') && <OpenTournaments staff={isAdmin} />}
           {r === 'tournament' && st.platform === 'dartsmind' && <MyMatches onOpen={openDM} />}</>} />;
     }
@@ -149,7 +153,7 @@ export default function HomeScreen() {
           {TABS.map(([k, ic, label]) => {
             const badge = k === 'messages' ? unreadDMs + (st.noticesUnread || 0) : k === 'help' && isAdmin ? openHelp
               : k === 'chat' ? (isAdmin ? (st.raffle?.requests || []).filter(x => x.status === 'pending').length : 0)
-                + ['general', 'tournament', 'raffle'].reduce((n, r) => n + mentionCount(st, `${r}:${st.platform}`), 0) : 0;
+                + ['general', 'tournament', 'premier', 'raffle'].reduce((n, r) => n + mentionCount(st, `${r}:${st.platform}`), 0) : 0;
             const on = tab === k;
             return (
               <TouchableOpacity key={k} style={styles.tab} onPress={() => setTab(k)} accessibilityLabel={label}>

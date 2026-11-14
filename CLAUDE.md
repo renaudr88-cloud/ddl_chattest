@@ -12,7 +12,7 @@ Must handle ~1000 concurrent players and be very easy to use for all ages. Backe
 - `php/` runs on the DDL site: `chat-login.php` checks the DDL users table and returns a Firebase custom token
   (uid `ddl-<id>`, claims `ddlName`, `ddlRole`, `ddlPhoto` = website profile photo URL). Pictures are shrunk in the app and stored in Firestore (data URLs).
 - Platforms (Dartsmind, Scolia): each has its own General chat, Tournament chat, Friendlies, Dartswap, Help and private chats.
-  Raffle chat only on Dartsmind, by staff approval (`raffleAccess/{uid}`). Only the account and mute/kick/ban are shared. Keep `app/src/platforms.js` and `platforms()` in the rules the same.
+  Raffle chat only on Dartsmind, by staff approval (`raffleAccess/{uid}`). Premier League chat only on Dartsmind, staff add players (`premierMembers/{uid}`). Only the account and mute/kick/ban are shared. Keep `app/src/platforms.js` and `platforms()` in the rules the same.
 - Setup, data model and costs: `README.md`. Status and order of work: `NEXT_STEPS.md`.
 
 Rules:
