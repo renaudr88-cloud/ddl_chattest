@@ -1,6 +1,6 @@
 // Stevey's login screen, now wired to the DDL account (php/chat-login.php) and in DDL colours.
 import { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Image, ActivityIndicator, KeyboardAvoidingView, Platform, useWindowDimensions } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Image, ActivityIndicator, KeyboardAvoidingView, ScrollView, Platform, useWindowDimensions } from 'react-native';
 import { chat, useChat } from '../chat';
 import { PLATFORMS } from '../platforms';
 import { TEST_MODE } from '../config';
@@ -11,6 +11,15 @@ import { C, themed } from '../theme';
 // The form starts just below the slogan, wherever the picture lands on this screen size.
 // Set BACKGROUND = null to go back to the plain navy screen with the logo drawn by the app.
 const BACKGROUND = require('../../assets/login-bg.jpg');
+
+// "In association with": the DDL partners (same as on the ddl-online.com homepage). Width = logo width at height 22.
+const SPONSORS = [
+  { name: 'Dartsmind', logo: require('../../assets/sponsors/dartsmind.png'), w: 22 },
+  { name: 'Timmort', logo: require('../../assets/sponsors/timmort.png'), w: 48, round: 3 },
+  { name: 'Board Room Darts', logo: require('../../assets/sponsors/boardroom.png'), w: 23, round: 4 },
+  { name: 'Condor', logo: require('../../assets/sponsors/condor.png'), w: 66 },
+  { name: "What's The Point", logo: require('../../assets/sponsors/whatsthepoint.png'), w: 70 },
+];
 const BG_W = 759, BG_H = 2072;   // pixel size of the picture
 const LOGO_TOP = 0.16;           // logo starts at 16% of the picture's height
 const SLOGAN_BOTTOM = 0.375;     // slogan ends at 37.5% of the picture's height
@@ -38,9 +47,11 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.bg}>
-    {BACKGROUND && <Image source={BACKGROUND} resizeMode="cover" style={[styles.bgImage, { top: imgTop, left: (width - imgW) / 2, width: imgW, height: imgH }]} />}
-    <KeyboardAvoidingView style={[styles.container, BACKGROUND && { justifyContent: 'flex-start', paddingTop: formTop }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <ScrollView contentContainerStyle={[styles.container, BACKGROUND && { justifyContent: 'flex-start', paddingTop: formTop }]}
+      keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      {/* the picture scrolls with the form, so the form never slides over the logo */}
+      {BACKGROUND && <Image source={BACKGROUND} resizeMode="cover" style={[styles.bgImage, { top: imgTop, left: (width - imgW) / 2, width: imgW, height: imgH }]} />}
       {!BACKGROUND && <>
         <Image source={require('../../assets/ddl-logo.png')} style={styles.logo} />
         <Text style={styles.title}>DDL</Text>
@@ -73,6 +84,14 @@ export default function LoginScreen() {
         {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Log In</Text>}
       </TouchableOpacity>
       <Text style={styles.hint}>{TEST_MODE ? 'Test version: log in with your own name. Staff: use the staff code as password.' : 'Use your ddl-online.com account. You can switch platform in the app.'}</Text>
+      <Text style={styles.partnersLabel}>In association with</Text>
+      <View style={styles.partners}>
+        {SPONSORS.map(sp => (
+          <View key={sp.name} style={styles.partner} accessibilityLabel={sp.name}>
+            <Image source={sp.logo} resizeMode="contain" style={{ width: sp.w, height: 22, borderRadius: sp.round || 0 }} />
+          </View>))}
+      </View>
+    </ScrollView>
     </KeyboardAvoidingView>
     </View>
   );
@@ -80,8 +99,8 @@ export default function LoginScreen() {
 
 const styles = themed(C => ({
   bg: { flex: 1, backgroundColor: C.navy, overflow: 'hidden' },
-  bgImage: { position: 'absolute' },
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  bgImage: { position: 'absolute', zIndex: -1 },   // behind the form (the scroll content is its own layer: container zIndex 0)
+  container: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 24, zIndex: 0 },
   logo: { width: 96, height: 96, borderRadius: 16, borderWidth: 3, borderColor: '#fff', marginBottom: 18 },
   title: { color: C.orange, fontSize: 56, fontWeight: '900', letterSpacing: 4 },
   subtitle: { color: '#fff', fontSize: 16, fontWeight: '700', letterSpacing: 3, textTransform: 'uppercase' },
@@ -96,4 +115,7 @@ const styles = themed(C => ({
   button: { width: '100%', backgroundColor: C.orange, borderRadius: 10, paddingVertical: 16, alignItems: 'center', marginTop: 10 },
   buttonText: { color: '#fff', fontSize: 17, fontWeight: 'bold', letterSpacing: 1, textTransform: 'uppercase' },
   hint: { color: '#C3CEE3', fontSize: 13, marginTop: 18, textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.8)', textShadowRadius: 6 },
+  partnersLabel: { color: C.barMuted, fontSize: 10, fontWeight: '800', letterSpacing: 2.5, textTransform: 'uppercase', marginTop: 22, marginBottom: 8 },
+  partners: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6, width: '100%', paddingBottom: 8 },
+  partner: { paddingHorizontal: 6, paddingVertical: 6, borderRadius: 10, backgroundColor: 'rgba(6,19,49,0.85)', borderWidth: 1, borderColor: '#1D2E56', alignItems: 'center', justifyContent: 'center' },
 }));
