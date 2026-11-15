@@ -129,7 +129,10 @@ service cloud.firestore {
     match /rooms/{room}/messages/{id} {
       allow read: if canRead() && roomOk(room) && roomAccess(room);
       allow create: if canPost() && roomOk(room) && roomAccess(room) && !blockedByOther(room)
-        && request.resource.data.keys().hasOnly(['uid', 'name', 'role', 'avatar', 'text', 'imageUrl', 'mentions', 'tournament', 'reply', 'poll', 'ts'])
+        && request.resource.data.keys().hasOnly(['uid', 'name', 'role', 'avatar', 'text', 'imageUrl', 'mentions', 'tournament', 'reply', 'poll', 'plan', 'ts'])
+        // A league match plan card (private chats only): just the id of the plan kept on ddl-online.com (php/chat-league.php).
+        && (!('plan' in request.resource.data) || (room.split(':')[0] == 'dm' && request.resource.data.plan is map
+            && request.resource.data.plan.keys().hasOnly(['id']) && request.resource.data.plan.id is int))
         // A poll (staff, group chats only): a question and 2 to 6 answers. Everyone votes, one vote per player.
         && (!('poll' in request.resource.data) || (isAdmin() && room.split(':')[0] != 'dm' && pollOk(request.resource.data.poll)))
         // Reply to another message: a short quote of it.

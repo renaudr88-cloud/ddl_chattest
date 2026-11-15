@@ -51,7 +51,7 @@ function chat_match_alerts(PDO $db): int {
                 if ($extra === '') throw $e;
             }
         }
-        if (!$rows) { flock($fh, LOCK_UN); return 0; }
+        $rows = $rows ?: [];
 
         $claim = $db->prepare('INSERT IGNORE INTO chat_match_alerts (match_id, player_id) VALUES (?, ?)');
         $subsQ = $db->prepare('SELECT ps.endpoint, ps.p256dh, ps.auth FROM chat_push_endpoints ce
@@ -74,6 +74,33 @@ function chat_match_alerts(PDO $db): int {
                 ];
                 $subsQ->execute([(int)$me]);
                 foreach ($subsQ->fetchAll(PDO::FETCH_ASSOC) as $s) $queue[] = [$s, $payload];
+            }
+        }
+        // League Match Planner: both players of a confirmed league match get a reminder about 1 hour before.
+        if (is_file(__DIR__ . '/league-schedule-lib.php')) {
+            require_once __DIR__ . '/league-schedule-lib.php';
+            if (ls_tables($db)) {
+                $due = $db->prepare("SELECT id FROM league_match_schedule WHERE status = 'confirmed' AND reminded = 0 AND play_ts BETWEEN ? AND ?");
+                $due->execute([time(), time() + 3600]);
+                foreach ($due->fetchAll(PDO::FETCH_COLUMN) as $sid) {
+                    $mark = $db->prepare('UPDATE league_match_schedule SET reminded = 1 WHERE id = ? AND reminded = 0');
+                    $mark->execute([(int)$sid]);
+                    if ($mark->rowCount() === 0) continue;   // another run already did it
+                    $p = ls_plan($db, (int)$sid);
+                    if (!$p) continue;
+                    ls_log($db, $p['id'], $p['fixture'], 'reminded', null, '');
+                    $mins = max(5, (int)round(($p['at'] - time()) / 60));
+                    foreach ([[$p['by'], $p['opponent']], [$p['opponent'], $p['by']]] as [$who, $opp]) {
+                        $payload = [
+                            'title' => '⏰ League match in ' . ($mins >= 55 ? '1 hour' : $mins . ' minutes'),
+                            'body' => mb_substr($p['league'], 0, 40) . ' · Week ' . $p['week'] . ': vs ' . $opp['name'],
+                            'url' => '/?dm=' . (int)$opp['id'] . '&p=dartsmind',
+                            'tag' => 'league-' . $p['id'],
+                        ];
+                        $subsQ->execute([(int)$who['id']]);
+                        foreach ($subsQ->fetchAll(PDO::FETCH_ASSOC) as $sub) $queue[] = [$sub, $payload];
+                    }
+                }
             }
         }
         if (!$queue) { flock($fh, LOCK_UN); return 0; }

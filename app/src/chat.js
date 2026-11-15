@@ -495,7 +495,7 @@ class ChatClient {
   outMsg(d, room) {
     const x = d.data({ serverTimestamps: 'estimate' });
     this.roomOf.set(d.id, room);
-    return { id: d.id, room, user: userOf(x), text: x.text || '', imageUrl: x.imageUrl || null, mentions: x.mentions || [], tournament: x.tournament || null,
+    return { id: d.id, room, user: userOf(x), text: x.text || '', imageUrl: x.imageUrl || null, mentions: x.mentions || [], tournament: x.tournament || null, plan: x.plan || null,
       reactions: x.reactions || {}, reply: x.reply || null, poll: x.poll || null, votes: x.votes || {}, ts: ms(x.ts) };
   }
   outFriendly(d, p) {
@@ -552,9 +552,9 @@ class ChatClient {
     if (dm) this.site('chat-push-send.php', { method: 'POST', body: { kind: 'dm', room, text } }).catch(() => {});
     else if (tagged.length) this.site('chat-push-send.php', { method: 'POST', body: { kind: 'tag', room, to: tagged, text } }).catch(() => {});
   }
-  async postMessage(room, text, imageUrl, otherHint, mentions, reply) {
+  async postMessage(room, text, imageUrl, otherHint, mentions, reply, extra) {
     const batch = writeBatch(db);
-    const msg = { ...this.mine(), text: text || '', imageUrl: imageUrl || null, ts: serverTimestamp() };
+    const msg = { ...this.mine(), text: text || '', imageUrl: imageUrl || null, ...(extra || {}), ts: serverTimestamp() };
     if (mentions?.length) msg.mentions = mentions;
     if (reply?.id) msg.reply = { id: String(reply.id), name: String(reply.name || '').slice(0, 30), text: String(reply.text || '📷 Picture').slice(0, 120) };
     batch.set(doc(collection(db, 'rooms', room, 'messages')), msg);
@@ -618,6 +618,46 @@ class ChatClient {
       }
       await this.postMessage(room, text, imageUrl, null, tags.slice(0, 10), reply);
       this.notify(room, text, tags.slice(0, 10));
+    },
+    // League Match Planner (php/chat-league.php): plan a league match with the opponent in a private chat.
+    // The website keeps the plan (admins see it); the chat message only carries its id: {plan: {id}}.
+    async 'league.fixtures'({ withId }) {
+      const r = await this.site('chat-league.php?with=' + encodeURIComponent(withId || ''));
+      return { list: r.list || [] };
+    },
+    async 'league.plan'({ id, fresh }) {
+      this.plans ||= new Map();
+      const hit = this.plans.get(id);
+      if (!fresh && hit && Date.now() - hit.at < 60 * 1000) return { plan: hit.plan };
+      const r = await this.site('chat-league.php?id=' + encodeURIComponent(id));
+      this.plans.set(id, { plan: r.plan, at: Date.now() });
+      return { plan: r.plan };
+    },
+    async 'league.propose'({ room, fixture, at, note }) {
+      this.canPost(note || '');
+      const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London'; } catch { return 'Europe/London'; } })();
+      const r = await this.site('chat-league.php', { method: 'POST', body: { action: 'propose', fixture, at, tz } });
+      this.plans?.delete(r.plan.id);
+      const text = String(note || '').trim().slice(0, 300) || '📅 League match: when can you play?';
+      await this.postMessage(room, text, null, null, null, null, { plan: { id: r.plan.id } });
+      this.notify(room, text, []);
+      return r;
+    },
+    async 'league.accept'({ room, id }) {
+      const r = await this.site('chat-league.php', { method: 'POST', body: { action: 'accept', id } });
+      this.plans?.set(id, { plan: r.plan, at: Date.now() });
+      await this.postMessage(room, '✅ Accepted, see you on the board!', null, null, null, null, { plan: { id } });
+      this.notify(room, '✅ Accepted the league match time', []);
+      return r;
+    },
+    async 'league.cancel'({ room, id, reason }) {
+      const text = '❌ Called off' + (reason ? ': ' + String(reason).trim().slice(0, 200) : '');
+      this.canPost(text);
+      const r = await this.site('chat-league.php', { method: 'POST', body: { action: 'cancel', id, reason } });
+      this.plans?.set(id, { plan: r.plan, at: Date.now() });
+      await this.postMessage(room, text, null, null, null, null, { plan: { id } });
+      this.notify(room, text, []);
+      return r;
     },
     // One reaction per player per message; the same emoji again takes it away.
     async react({ id, emoji }) {

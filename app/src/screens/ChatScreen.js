@@ -11,8 +11,9 @@ import { Avatar, Header, Notice, RoleTag, Lightbox, Empty, timeLabel, clock, toa
 import { C, R, themed, useTheme } from '../theme';
 import { TournamentCard } from './Tournaments';
 import { PollComposer, PollCard, PinBar, SearchBar } from './Extras';
+import { PlanComposer, PlanCard } from './Planner';
 
-export default function ChatScreen({ room, title, subtitle, onBack, onUser, right, below }) {
+export default function ChatScreen({ room, title, subtitle, onBack, onUser, right, below, other, initialPlan }) {
   const st = useChat();
   const theme = useTheme();
   const [text, setText] = useState('');
@@ -28,6 +29,10 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
   const [searchOn, setSearchOn] = useState(false);
   const [q, setQ] = useState('');
   const group = !room.startsWith('dm:');
+  // League Match Planner (private chats with a DDL player): 📅 in the composer, or straight from the website's league page.
+  const [planOpen, setPlanOpen] = useState(!!initialPlan);
+  const [planFixture, setPlanFixture] = useState(initialPlan || null);
+  const canPlan = !group && !!st.me?.id?.startsWith('ddl-') && String(other?.id || '').startsWith('ddl-');
   useEffect(() => { chat.watchPin(room); }, [room]);
   const searchTimer = useRef(null);
   const list = st.rooms[room];
@@ -114,7 +119,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
 
   // Rows only re-draw when their own message changes (not on every letter typed or every update elsewhere).
   const act = useRef({});
-  act.current = { onUser, setMenu, del, setZoom, react };
+  act.current = { onUser, setMenu, del, setZoom, react, plan: f => { setPlanFixture(f || null); setPlanOpen(true); } };
   const meId = st.me?.id;
   const renderItem = useCallback(({ item }) => <Row m={item} meId={meId} admin={admin} muted={muted} theme={theme} act={act} />, [meId, admin, muted, theme]);
   return (
@@ -158,6 +163,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
         </View>}
         <View style={styles.row}>
           {CAN_UPLOAD && <TouchableOpacity style={styles.icon} onPress={pick} disabled={muted} accessibilityLabel="Add a picture"><Text style={{ fontSize: 20 }}>📷</Text></TouchableOpacity>}
+          {canPlan && <TouchableOpacity style={styles.icon} onPress={() => { setPlanFixture(null); setPlanOpen(true); }} disabled={muted} accessibilityLabel="Plan a league match"><Text style={{ fontSize: 20 }}>📅</Text></TouchableOpacity>}
           {group && admin && <TouchableOpacity style={styles.icon} onPress={() => setPollOpen(true)} disabled={muted} accessibilityLabel="New poll"><Text style={{ fontSize: 20 }}>📊</Text></TouchableOpacity>}
           <TextInput style={styles.input} value={text} onChangeText={onType} multiline maxLength={1000} editable={!muted}
             placeholder={room.startsWith('dm:') ? 'Write a private message…' : 'Message… type @ to tag a player'} placeholderTextColor={C.muted} />
@@ -174,6 +180,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
         onReport={menu && menu.user.id !== st.me?.id ? () => { setReport({ user: menu.user, room, message: menu }); setMenu(null); } : null}
         onPin={admin && group ? () => { chat.request('pin.set', { room, message: menu }).then(() => toast('Pinned at the top. 📌')).catch(showError); setMenu(null); } : null} />
       <PollComposer visible={pollOpen} room={room} onClose={() => setPollOpen(false)} />
+      {canPlan && <PlanComposer visible={planOpen} room={room} other={other} fixture={planFixture} onClose={() => setPlanOpen(false)} />}
       <ReportSheet target={report} onClose={() => setReport(null)} />
     </KeyboardAvoidingView>
   );
@@ -197,6 +204,7 @@ const Row = memo(function Row({ m, meId, admin, muted, act }) {
           {!!m.poll ? <PollCard m={m} meId={meId} canVote={!muted} />
             : !!m.text && <Text style={styles.txt}>{withTags(m.text, m.mentions, meId, onUser)}</Text>}
           {!!m.tournament && <TournamentCard tournament={m.tournament} />}
+          {!!m.plan && <PlanCard id={m.plan.id} room={m.room} meId={meId} onOtherTime={f => act.current.plan(f)} />}
           {!!m.imageUrl && <TouchableOpacity onPress={() => act.current.setZoom(m.imageUrl)}><Image source={{ uri: m.imageUrl }} style={styles.img} resizeMode="cover" /></TouchableOpacity>}
           <Reactions m={m} meId={meId} onReact={e => act.current.react(m, e)} />
         </Pressable>

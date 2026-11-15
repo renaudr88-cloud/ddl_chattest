@@ -65,8 +65,9 @@ export default function HomeScreen() {
       chat.setPlatform(p && PLATFORMS.some(x => x.key === p) ? p : 'dartsmind');   // tournaments are on Dartsmind
       let name = null;
       try { name = n && decodeURIComponent(n[1].replace(/\+/g, ' ')); } catch {}
+      const plan = Number(/[?&]plan=(\d+)/.exec(url)?.[1] || 0);   // from the league page: plan this league match
       chat.requestHere('dm.player', { ...(m ? { id: m[1] } : { dartsmind: name }), platform: p || 'dartsmind' })
-        .then(r => { setSheet(null); setAdmin(false); setDm(r); }).catch(showError);
+        .then(r => { setSheet(null); setAdmin(false); setDm({ ...r, plan: plan || null }); }).catch(showError);
     };
     Linking.getInitialURL().then(go).catch(() => {});
     const sub = Linking.addEventListener('url', e => go(e.url));
@@ -122,6 +123,7 @@ export default function HomeScreen() {
 
   let body;
   if (dm) body = <ChatScreen room={dm.room} title={dm.other.name} subtitle={`Private chat · ${platformInfo(dm.room.split(':')[1]).name}${dm.other.role === 'admin' ? ' · DDL staff' : ''}`} onBack={() => { setDm(null); setTab('messages'); }} onUser={onUser}
+    other={dm.other} initialPlan={dm.plan} key={dm.room + (dm.plan || '')}
     below={dm.room.split(':')[1] === 'dartsmind' && <DartsmindBar other={dm.other} />} />;
   else if (admin) body = <AdminScreen onBack={() => setAdmin(false)} onUser={setSheet} startTab={admin === 'reports' ? 'reports' : undefined} />;
   else if (tab === 'chat') {
