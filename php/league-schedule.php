@@ -102,7 +102,7 @@ $isLoggedIn = true;
   </div>
   <div class="lp-card">
     <div class="lp-row head"><div>When (UK)</div><div>Match</div><div>Status</div></div>
-    <?php if (!$plans): ?><div class="lp-empty">Nothing here yet. Players plan their league matches in DDL Chat (📅 in a private chat, or "Plan in chat" on the league page).</div><?php endif; ?>
+    <?php if (!$plans): ?><div class="lp-empty">Nothing here yet. Players plan their league matches in DDL Chat: 📅 in a private chat, or click the opponent's name on the league page → Message in DDL Chat.</div><?php endif; ?>
     <?php foreach ($plans as $p): [$d, $t] = $fmt($p['at']); [$lab, $cls] = $label[$p['status']] ?? [$p['status'], 'wait']; ?>
       <div class="lp-row">
         <div class="lp-when"><b><?= $d ?></b><small><?= $t ?></small></div>
