@@ -18,6 +18,7 @@ import HelpScreen from './HelpScreen';
 import AdminScreen from './AdminScreen';
 import MemberSheet from './MemberSheet';
 import Welcome, { welcomeSeen } from './Welcome';
+import MyDDLScreen from './MyDDLScreen';
 import { soundOn, setSound } from '../sound';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { pushStatus, pushOn, pushOff, pushBoot } from '../push';
@@ -26,6 +27,7 @@ const TABS = [
   ['chat', '#', 'Chat'],
   ['messages', '✉', 'Messages'],
   ['friendlies', '🎯', 'Friendlies'],
+  ['myddl', '🏆', 'My DDL'],
   ['help', '?', 'Help'],
 ];
 
@@ -88,7 +90,7 @@ export default function HomeScreen() {
     );
   }
 
-  const openDM = (room, other) => { setSheet(null); setAdmin(false); setDm({ room, other }); };
+  const openDM = (room, other, back = 'messages') => { setSheet(null); setAdmin(false); setDm({ room, other, back }); };
   const chatWith = async user => {
     try { const r = await chat.requestHere('dm.open', { userId: user.id }); openDM(r.room, r.other); } catch (e) { showError(e); }
   };
@@ -122,7 +124,7 @@ export default function HomeScreen() {
   );
 
   let body;
-  if (dm) body = <ChatScreen room={dm.room} title={dm.other.name} subtitle={`Private chat · ${platformInfo(dm.room.split(':')[1]).name}${dm.other.role === 'admin' ? ' · DDL staff' : ''}`} onBack={() => { setDm(null); setTab('messages'); }} onUser={onUser}
+  if (dm) body = <ChatScreen room={dm.room} title={dm.other.name} subtitle={`Private chat · ${platformInfo(dm.room.split(':')[1]).name}${dm.other.role === 'admin' ? ' · DDL staff' : ''}`} onBack={() => { setTab(dm.back || 'messages'); setDm(null); }} onUser={onUser}
     other={dm.other} initialPlan={dm.plan} key={dm.room + (dm.plan || '')}
     below={dm.room.split(':')[1] === 'dartsmind' && <DartsmindBar other={dm.other} />} />;
   else if (admin) body = <AdminScreen onBack={() => setAdmin(false)} onUser={setSheet} startTab={admin === 'reports' ? 'reports' : undefined} />;
@@ -153,6 +155,7 @@ export default function HomeScreen() {
   }
   else if (tab === 'messages') body = <MessagesScreen onOpen={openDM} />;
   else if (tab === 'friendlies') body = <FriendliesScreen onOpenDM={openDM} onUser={onUser} />;
+  else if (tab === 'myddl') body = <MyDDLScreen onOpenDM={(room, other) => openDM(room, other, 'myddl')} />;
   else body = <HelpScreen onOpenDM={openDM} />;
 
   return (
@@ -183,7 +186,7 @@ export default function HomeScreen() {
       {!dm && !admin && (
         <View style={styles.tabs}>
           {TABS.map(([k, ic, label]) => {
-            const badge = k === 'messages' ? unreadDMs + (st.noticesUnread || 0) : k === 'help' && isAdmin ? openHelp
+            const badge = k === 'myddl' ? (st.checkinDue || []).length : k === 'messages' ? unreadDMs + (st.noticesUnread || 0) : k === 'help' && isAdmin ? openHelp
               : k === 'chat' ? (isAdmin ? (st.raffle?.requests || []).filter(x => x.status === 'pending').length : 0)
                 + ['general', 'tournament', 'premier', 'raffle'].reduce((n, r) => n + mentionCount(st, `${r}:${st.platform}`), 0) + newMatches(st, st.platform) : 0;
             const on = tab === k;

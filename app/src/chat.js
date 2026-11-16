@@ -54,6 +54,8 @@ const initial = {
   reports: [],             // staff: open reports from players (reports/*)
   myMatches: [],           // my open matches on ddl-online.com: "Your match: vs ..." (php/chat-matches.php)
   seenMatches: {},         // match id -> true: matches I have seen in the Tournament chat (red dot until then)
+  checkinDue: [],          // [{id, name}] my tournaments with check-in open where I have not checked in yet (php/chat-matches.php)
+  myddl: null,             // My DDL tab: {tournaments: {mine, open}, leagues, avg, at} (php/chat-myddl.php)
 };
 
 // Players I blocked: their messages, private chats, friendlies and listings are hidden for me.
@@ -224,6 +226,20 @@ class ChatClient {
     if (!res.ok) fail('site', data?.error || 'Something went wrong. Try again.');
     return data;
   }
+  // Like site(), with a file upload (multipart form): used for the average screenshot.
+  async siteForm(file, form) {
+    if (TEST_MODE) fail('test_mode', 'Only with a DDL account.');
+    const token = await AsyncStorage.getItem(TOKEN_KEY);
+    if (!token) fail('login', 'Log out and log in again to use this.');
+    let res, data;
+    try {
+      res = await fetch(LOGIN_URL.replace('chat-login.php', file), { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form });
+      data = await res.json();
+    } catch { fail('offline', 'No connection to the DDL website. Try again.'); }
+    if (res.status === 401) fail('login', 'Log out and log in again to use this.');
+    if (!res.ok) fail('site', data?.error || data?.message || 'Something went wrong. Try again.');
+    return data;
+  }
   async loadNotices() {
     if (TEST_MODE) return;
     this.noticesAt = Date.now();
@@ -369,7 +385,7 @@ class ChatClient {
 
   pollMatches() {
     if (TEST_MODE || !this.uid?.startsWith('ddl-')) return;
-    this.site('chat-matches.php').then(r => this.set({ myMatches: r.list || [] })).catch(() => {});
+    this.site('chat-matches.php').then(r => this.set({ myMatches: r.list || [], checkinDue: r.checkin || [] })).catch(() => {});
   }
   // Seen in the Tournament chat: no more red dot for these matches.
   seeMatches(ids) {
@@ -712,6 +728,35 @@ class ChatClient {
       if (q.length < 2) return { list: [] };
       const r = await this.site('chat-search.php?q=' + encodeURIComponent(q));
       return { list: r.list || [] };
+    },
+    // My DDL tab: my tournaments and leagues on ddl-online.com (php/chat-myddl.php). Signing up and checking in
+    // run the website's own scripts there, with every check of the website.
+    async 'myddl.get'() {
+      const r = await this.site('chat-myddl.php');
+      const data = { tournaments: r.tournaments || { mine: [], open: [] }, leagues: r.leagues || [], avg: r.avg ?? null, at: Date.now() };
+      const due = data.tournaments.mine.filter(t => t.checkInOpen && !t.checkedIn).map(t => ({ id: t.id, name: t.name }));
+      this.set({ myddl: data, checkinDue: due });
+      return data;
+    },
+    async 'myddl.join'({ id }) {
+      const r = await this.site('chat-myddl.php', { method: 'POST', body: { action: 'join', id } });
+      if (!r.needAvg) this.actions['myddl.get'].call(this).catch(() => {});
+      return r;
+    },
+    async 'myddl.checkin'({ id }) {
+      const r = await this.site('chat-myddl.php', { method: 'POST', body: { action: 'checkin', id } });
+      await this.actions['myddl.get'].call(this).catch(() => {});
+      return r;
+    },
+    // Average screenshot (Dartsmind, RECENT 100 tab): checked by the website like on its tournament page.
+    async 'myddl.avg'({ uri, name = 'screenshot.jpg', type = 'image/jpeg' }) {
+      const form = new FormData();
+      form.append('action', 'avg');
+      if (Platform.OS === 'web') form.append('screenshot', await (await fetch(uri)).blob(), name);
+      else form.append('screenshot', { uri, name, type });
+      const r = await this.siteForm('chat-myddl.php', form);
+      if (!r.ok) fail('avg', r.message || "Couldn't verify that screenshot. Try again.");
+      return r;
     },
     async 'matches.mine'() { const r = await this.site('chat-matches.php'); this.set({ myMatches: r.list || [] }); return { list: r.list || [] }; },
     async 'player.get'({ id }) { return { user: await this.player(id) }; },

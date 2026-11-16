@@ -1,6 +1,7 @@
 <?php
 // GET /chat-matches.php   (header Authorization: Bearer <token from chat-login.php>)
-// -> {"list": [{match, tournament, round, bracket, platform, opponent: {id, name, avatar, dartsmind, scolia}}]}
+// -> {"list": [{match, tournament, round, bracket, platform, opponent: {id, name, avatar, dartsmind, scolia}}],
+//     "checkin": [{id, name}]}   tournaments where check-in is open and I have not checked in yet (My DDL tab: red dot)
 // The player's open matches in running tournaments (table matches, read only), so the chat can show
 // "Your match: vs ..." with a button for a private chat and the opponent's Dartsmind name.
 require __DIR__ . '/chat-config.php';
@@ -49,9 +50,23 @@ foreach ($rows as $r) {
         ],
     ];
 }
+// Check-in open and not checked in yet (as a player or a reserve).
+$checkin = [];
+try {
+    $st = chat_db()->prepare("
+        SELECT t.id, t.name FROM tournaments t
+        LEFT JOIN tournament_players tp ON tp.tournament_id = t.id AND tp.player_id = ?
+        LEFT JOIN tournament_reserve_list tr ON tr.tournament_id = t.id AND tr.user_id = ?
+        WHERE t.check_in_open = 1 AND t.completed_at IS NULL AND t.archived_at IS NULL
+          AND ((tp.player_id IS NOT NULL AND tp.checked_in = 0) OR (tr.user_id IS NOT NULL AND tr.checked_in = 0))
+        LIMIT 5");
+    $st->execute([$uid, $uid]);
+    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) $checkin[] = ['id' => (int)$r['id'], 'name' => (string)$r['name']];
+} catch (Throwable $e) { error_log('chat-matches checkin: ' . $e->getMessage()); }
+
 // After the answer is sent: "Your match is ready" notifications for everyone (at most once a minute, see chat-match-alerts.php).
 register_shutdown_function(function () {
     if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
     if (is_file(__DIR__ . '/chat-match-alerts.php')) { require_once __DIR__ . '/chat-match-alerts.php'; chat_match_alerts(chat_db()); }
 });
-chat_json(200, ['list' => $list]);
+chat_json(200, ['list' => $list, 'checkin' => $checkin]);
