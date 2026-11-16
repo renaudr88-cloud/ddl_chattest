@@ -5,7 +5,8 @@ rules_version = '2';
 //
 // Data
 //   users/{uid}                          name, nameLower, role, avatar, lastSeen, device (ios|android|desktop), installed, push
-//   rooms/{room}/messages/{id}           room = "general:<platform>", "tournament:<platform>" or "dm:<platform>:<uidA>:<uidB>" 
+//   rooms/{room}/messages/{id}           room = "general:<platform>", "tournament:<platform>", "dm:<platform>:<uidA>:<uidB>"
+//                                        or "ch:<channel id>" (a chat room staff made)
 //   dms/{room}                           one per private chat: members, users{uid:{name,role}}, lastAt, lastBy
 //   platforms/{p}/friendlies/{id}        "looking for a friendly" cards
 //   platforms/{p}/swap/{id}              Dartswap listings
@@ -19,6 +20,8 @@ rules_version = '2';
 //   prefs/{uid}                          my settings: { hiddenDms: { <room>: <time> } } private chats I deleted (only me)
 //   pins/{room}                          the pinned message of a group chat (staff): text, name, messageId, by, ts
 //   reports/{id}                         a player reports a player or message to staff: by, targetId, reason, status open|handled|dismissed
+//   channels/{id}                        chat rooms staff make: name, desc, emoji, platform (all|dartsmind|scolia),
+//                                        access open|request|invite, by, ts, members { <uid>: {name, s: member|pending|invited|removed} }
 //   config/staff                         test mode only: { code: "..." } (set in the console, unreadable for the app)
 //
 // Staff (admin): a DDL login with ddlRole "admin" in the token (made by php/chat-login.php),
@@ -86,7 +89,8 @@ service cloud.firestore {
       let p = room.split(':');
       return (p.size() == 2 && p[0] in ['general', 'tournament'] && inPlatforms(p[1]))
         || (p.size() == 2 && p[0] in ['raffle', 'premier'] && p[1] == 'dartsmind')
-        || (p.size() == 4 && p[0] == 'dm' && inPlatforms(p[1]) && p[2] < p[3] && (p[2] == me() || p[3] == me()));
+        || (p.size() == 4 && p[0] == 'dm' && inPlatforms(p[1]) && p[2] < p[3] && (p[2] == me() || p[3] == me()))
+        || (p.size() == 2 && p[0] == 'ch' && p[1].size() > 0 && p[1].size() <= 40);
     }
 
     // Raffle chat: only staff and players whose access request staff approved.
@@ -103,9 +107,33 @@ service cloud.firestore {
       return p[0] == 'dm' && exists(/databases/$(database)/documents/blocks/$(other))
         && me() in get(/databases/$(database)/documents/blocks/$(other)).data.get('users', {});
     }
+    // A chat room staff made: staff, and players who are a member of it (members.<uid>.s == 'member').
+    function channelMember(id) {
+      return isAdmin() || get(/databases/$(database)/documents/channels/$(id)).data.get('members', {}).get(me(), {}).get('s', '') == 'member';
+    }
     function roomAccess(room) {
       let kind = room.split(':')[0];
-      return (kind != 'raffle' || raffleApproved()) && (kind != 'premier' || premierMember());
+      return (kind != 'raffle' || raffleApproved()) && (kind != 'premier' || premierMember())
+        && (kind != 'ch' || channelMember(room.split(':')[1]));
+    }
+    // A player changes only their own place in a chat room:
+    // join an open room, ask to join a room "on request", accept an invitation, or leave / decline / cancel.
+    // Someone staff removed (s == 'removed') cannot come back by themselves.
+    function ownMembership() {
+      let before = resource.data.get('members', {}).get(me(), null);
+      let after = request.resource.data.get('members', {}).get(me(), null);
+      return request.resource.data.members.diff(resource.data.get('members', {})).affectedKeys().hasOnly([me()]) && (
+        (after == null && before != null && before.s != 'removed')
+        || (before == null && resource.data.access == 'open' && after == {'name': myName(), 's': 'member'})
+        || (before == null && resource.data.access == 'request' && after == {'name': myName(), 's': 'pending'})
+        || (before != null && before.s == 'invited' && after == {'name': before.name, 's': 'member'}));
+    }
+    function channelOk(d) {
+      return d.keys().hasOnly(['name', 'desc', 'emoji', 'platform', 'access', 'by', 'ts', 'members'])
+        && text(d.name, 40) && d.name.size() > 0 && text(d.desc, 200)
+        && d.emoji is string && d.emoji.size() <= 8
+        && d.platform in ['all', 'dartsmind', 'scolia'] && d.access in ['open', 'request', 'invite']
+        && d.members is map && d.members.size() <= 3000;
     }
 
     // ---------- users ----------
@@ -178,6 +206,18 @@ service cloud.firestore {
         && request.resource.data.text is string && request.resource.data.text.size() <= 300
         && request.resource.data.name is string && request.resource.data.name.size() <= 30
         && request.resource.data.messageId is string && request.resource.data.messageId.size() <= 60;
+      allow delete: if isAdmin();
+    }
+
+    // ---------- chat rooms made by staff ----------
+    // Everyone sees the list (the app shows invite-only rooms only to their members); messages only for members.
+    match /channels/{id} {
+      allow read: if canRead();
+      allow create: if isAdmin() && channelOk(request.resource.data)
+        && request.resource.data.by == me() && request.resource.data.ts == request.time;
+      allow update: if (isAdmin() && channelOk(request.resource.data)
+            && changed().hasOnly(['name', 'desc', 'emoji', 'platform', 'access', 'members']))
+        || (canRead() && changed().hasOnly(['members']) && ownMembership());
       allow delete: if isAdmin();
     }
 

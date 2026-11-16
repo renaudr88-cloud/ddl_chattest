@@ -19,6 +19,7 @@ import AdminScreen from './AdminScreen';
 import MemberSheet from './MemberSheet';
 import Welcome, { welcomeSeen } from './Welcome';
 import MyDDLScreen from './MyDDLScreen';
+import ChannelsScreen, { ChannelBar, channelsHere } from './Channels';
 import { soundOn, setSound } from '../sound';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { pushStatus, pushOn, pushOff, pushBoot } from '../push';
@@ -34,7 +35,7 @@ const TABS = [
 export default function HomeScreen() {
   const st = useChat();
   const [tab, setTab] = useState('chat');
-  const [room, setRoom] = useState('general');  // chat tab: general | tournament | premier | raffle
+  const [room, setRoom] = useState('general');  // chat tab: general | tournament | premier | raffle | ch:<id> (a chat room) | rooms (the list)
   const [dm, setDm] = useState(null);          // {room, other}
   const [admin, setAdmin] = useState(false);
   const [sheet, setSheet] = useState(null);    // user
@@ -54,6 +55,7 @@ export default function HomeScreen() {
         let room = ''; try { room = decodeURIComponent(r[1]); } catch {}
         const [kind, plat] = room.split(':');
         if (Platform.OS === 'web') { try { window.history.replaceState(null, '', window.location.pathname); } catch {} }
+        if (kind === 'ch' && plat) { setDm(null); setAdmin(false); setTab('chat'); setRoom(room); return; }
         if (PLATFORMS.some(x => x.key === plat) && ['general', 'tournament', 'premier', 'raffle'].includes(kind)) {
           chat.setPlatform(plat); setDm(null); setAdmin(false); setTab('chat'); setRoom(kind);
         }
@@ -131,20 +133,34 @@ export default function HomeScreen() {
   else if (tab === 'chat') {
     const hasRaffle = st.platform === RAFFLE_PLATFORM;
     const hasPremier = st.platform === 'dartsmind' && (isAdmin || st.premier?.member);
-    const r = (room === 'raffle' && !hasRaffle) || (room === 'premier' && !hasPremier) ? 'general' : room;
+    // Chat rooms staff made: mine are tabs next to General / Tournament; "＋ Rooms" lists them all.
+    const chans = channelsHere(st);
+    const myChans = chans.filter(c => c.my === 'member');
+    const chan = room.startsWith('ch:') ? chans.find(c => 'ch:' + c.id === room && (c.my === 'member' || isAdmin)) : null;
+    const r = (room === 'raffle' && !hasRaffle) || (room === 'premier' && !hasPremier) || (room.startsWith('ch:') && !chan) ? 'general' : room;
+    const roomsBadge = chans.filter(c => c.my === 'invited').length + (isAdmin ? chans.reduce((n, c) => n + c.members.filter(m => m.s === 'pending').length, 0) : 0);
     const pendingRaffle = isAdmin ? (st.raffle?.requests || []).filter(x => x.status === 'pending').length : 0;
     const tags = k => mentionCount(st, `${k}:${st.platform}`) + (k === 'tournament' ? newMatches(st, st.platform) : 0);
     const rooms = [['general', 'General', tags('general')], ['tournament', 'Tournament', tags('tournament')],
       ...(hasPremier ? [['premier', '🏅 Premier', tags('premier')]] : []),
-      ...(hasRaffle ? [['raffle', '🔒 Raffles', pendingRaffle + tags('raffle')]] : [])];
+      ...(hasRaffle ? [['raffle', '🔒 Raffles', pendingRaffle + tags('raffle')]] : []),
+      ...myChans.map(c => ['ch:' + c.id, `${c.emoji} ${c.name}`, mentionCount(st, 'ch:' + c.id)]),
+      ...(chan && chan.my !== 'member' ? [['ch:' + chan.id, `${chan.emoji} ${chan.name}`, 0]] : []),
+      ['rooms', '＋ Rooms', roomsBadge]];
     const info = {
       general: ['General chat', `${here.name} community. Keep it friendly.`],
       tournament: ['Tournament', `${here.name} tournaments: draws, results, who plays next.`],
       raffle: ['Raffles', 'Dartsmind raffles, for approved players.'],
       premier: ['Premier League', 'Premier League players and DDL staff only.'],
-    }[r];
+      rooms: ['Chat rooms', 'Join a room, or open one of yours.'],
+    }[r] || (chan ? [chan.name, chan.desc || 'Chat room'] : ['Chat', '']);
     const picker = <RoomPicker rooms={rooms} value={r} onChange={setRoom} />;
-    if (r === 'raffle' && !isAdmin && st.raffle?.status !== 'approved') {
+    if (r === 'rooms') {
+      body = <ChannelsScreen staff={isAdmin} onOpen={id => setRoom('ch:' + id)} header={<><Header title={info[0]} subtitle={info[1]} right={headerRight} />{picker}</>} />;
+    } else if (chan) {
+      body = <ChatScreen key={r} room={r} title={info[0]} subtitle={info[1]} onUser={onUser} right={headerRight}
+        below={<>{picker}<ChannelBar c={chan} staff={isAdmin} onLeft={() => setRoom('general')} /></>} />;
+    } else if (r === 'raffle' && !isAdmin && st.raffle?.status !== 'approved') {
       body = <RaffleGate header={<><Header title={info[0]} subtitle={info[1]} right={headerRight} />{picker}</>} />;
     } else {
       body = <ChatScreen key={r + st.platform} room={`${r}:${st.platform}`} title={info[0]} subtitle={info[1]} onUser={onUser} right={headerRight}
@@ -188,7 +204,9 @@ export default function HomeScreen() {
           {TABS.map(([k, ic, label]) => {
             const badge = k === 'myddl' ? (st.checkinDue || []).length : k === 'messages' ? unreadDMs + (st.noticesUnread || 0) : k === 'help' && isAdmin ? openHelp
               : k === 'chat' ? (isAdmin ? (st.raffle?.requests || []).filter(x => x.status === 'pending').length : 0)
-                + ['general', 'tournament', 'premier', 'raffle'].reduce((n, r) => n + mentionCount(st, `${r}:${st.platform}`), 0) + newMatches(st, st.platform) : 0;
+                + ['general', 'tournament', 'premier', 'raffle'].reduce((n, r) => n + mentionCount(st, `${r}:${st.platform}`), 0) + newMatches(st, st.platform)
+                + channelsHere(st).reduce((n, c) => n + (c.my === 'member' ? mentionCount(st, 'ch:' + c.id) : 0) + (c.my === 'invited' ? 1 : 0)
+                  + (isAdmin ? c.members.filter(m => m.s === 'pending').length : 0), 0) : 0;
             const on = tab === k;
             return (
               <TouchableOpacity key={k} style={styles.tab} onPress={() => setTab(k)} accessibilityLabel={label}>

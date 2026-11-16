@@ -125,6 +125,7 @@ export function ReportsList({ onUser }) {
 }
 const roomLabel = room => {
   const [k, p] = room.split(':');
+  if (k === 'ch') return 'Chat room';
   const kind = { general: 'General', tournament: 'Tournament', premier: 'Premier League', raffle: 'Raffles', dm: 'Private chat' }[k] || k;
   return p ? `${kind} (${p[0].toUpperCase() + p.slice(1)})` : kind;
 };

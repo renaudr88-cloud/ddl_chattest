@@ -55,6 +55,7 @@ const initial = {
   myMatches: [],           // my open matches on ddl-online.com: "Your match: vs ..." (php/chat-matches.php)
   seenMatches: {},         // match id -> true: matches I have seen in the Tournament chat (red dot until then)
   checkinDue: [],          // [{id, name}] my tournaments with check-in open where I have not checked in yet (php/chat-matches.php)
+  channels: [],            // chat rooms staff made: [{id, name, desc, emoji, platform, access, members: [{id, name, s}], my}]
   myddl: null,             // My DDL tab: {tournaments: {mine, open}, leagues, avg, at} (php/chat-myddl.php)
 };
 
@@ -351,6 +352,27 @@ class ChatClient {
       }, onErr));
     }
 
+    // Chat rooms staff made (open, on request, or invite only). I follow the ones I am a member of.
+    this.sub('channels', onSnapshot(query(collection(db, 'channels'), limit(60)), s => {
+      const channels = s.docs.map(d => this.outChannel(d)).sort((a, b) => a.name.localeCompare(b.name));
+      const before = Object.fromEntries((this.state.channels || []).map(c => [c.id, c.my]));
+      if (this.channelsLoaded) for (const c of channels) {
+        if (c.my === 'invited' && before[c.id] !== 'invited') toast(`You are invited to the chat room ${c.name}. 💬`);
+        if (c.my === 'member' && before[c.id] === 'pending') toast(`You are in: ${c.name}. 💬`);
+      }
+      this.channelsLoaded = true;
+      let n = 0;
+      for (const c of channels) {
+        const room = 'ch:' + c.id;
+        if (c.my === 'member' && n < 15) { n++; this.watchRoom(room); }
+        else if (this.subs.has('room:' + room) && this.role !== 'admin') {
+          this.subs.get('room:' + room)(); this.subs.delete('room:' + room);
+          this.set(st => { const rooms = { ...st.rooms }; delete rooms[room]; return { rooms }; });
+        }
+      }
+      this.set({ channels });
+    }, onErr));
+
     this.sub('dms', onSnapshot(query(collection(db, 'dms'), where('members', 'array-contains', this.uid)), s => {
       const dms = s.docs.map(d => {
         const x = d.data(), otherId = x.members.find(m => m !== this.uid) || this.uid;
@@ -561,12 +583,27 @@ class ChatClient {
   }
   // Phone notification for the other player of a private chat, and for players I @tagged (php/chat-push-send.php).
   // Fire and forget: the message is already sent; a missing notification must never block the chat.
+  outChannel(d) {
+    const x = d.data({ serverTimestamps: 'estimate' });
+    const members = Object.entries(x.members || {}).map(([id, m]) => ({ id, name: String(m?.name || 'Player'), s: m?.s || 'member' }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+    return { id: d.id, name: String(x.name || 'Chat room'), desc: String(x.desc || ''), emoji: x.emoji || '💬', platform: x.platform || 'all',
+      access: x.access || 'open', by: x.by, ts: ms(x.ts), members, my: x.members?.[this.uid]?.s || null };
+  }
+  channel(id) {
+    const c = this.state.channels.find(x => x.id === id);
+    if (!c) fail('not_found', 'That chat room is gone.');
+    return c;
+  }
   notify(room, text, tags) {
     if (TEST_MODE || !this.uid?.startsWith('ddl-')) return;
     const dm = room.startsWith('dm:');
     const tagged = (tags || []).map(t => t.id).filter(id => id.startsWith('ddl-'));
     if (dm) this.site('chat-push-send.php', { method: 'POST', body: { kind: 'dm', room, text } }).catch(() => {});
-    else if (tagged.length) this.site('chat-push-send.php', { method: 'POST', body: { kind: 'tag', room, to: tagged, text } }).catch(() => {});
+    else if (tagged.length) {
+      const where = room.startsWith('ch:') ? this.state.channels.find(c => 'ch:' + c.id === room)?.name || '' : undefined;
+      this.site('chat-push-send.php', { method: 'POST', body: { kind: 'tag', room, to: tagged, text, where } }).catch(() => {});
+    }
   }
   async postMessage(room, text, imageUrl, otherHint, mentions, reply, extra) {
     const batch = writeBatch(db);
@@ -620,6 +657,66 @@ class ChatClient {
       await updateDoc(doc(db, 'raffleAccess', uid), { status, by: this.uid, decidedAt: serverTimestamp() });
       const r = this.state.raffle.requests.find(x => x.id === uid);
       await this.log('raffle_' + status, { id: uid, name: r?.name || '' }, '');
+    },
+    // ---- Chat rooms (staff make them; open to all, on request, or invite only) ----
+    async 'channel.create'({ name, desc, emoji, platform, access }) {
+      if (this.role !== 'admin') fail('forbidden', 'Staff only.');
+      name = String(name || '').trim().slice(0, 40); desc = String(desc || '').trim().slice(0, 200);
+      if (!name) fail('bad_input', 'Give the chat room a name.');
+      if (hasBad(name + ' ' + desc)) fail('bad_word', 'Blocked: that contains a word that is not allowed.');
+      if (!['open', 'request', 'invite'].includes(access)) access = 'open';
+      if (!['all', ...P_KEYS].includes(platform)) platform = 'all';
+      const ref = await addDoc(collection(db, 'channels'), {
+        name, desc, emoji: String(emoji || '💬').slice(0, 8), platform, access, by: this.uid, ts: serverTimestamp(),
+        members: { [this.uid]: { name: this.name, s: 'member' } },
+      });
+      await this.log('room_create', { id: ref.id, name }, access);
+      return { id: ref.id };
+    },
+    async 'channel.edit'({ id, name, desc, emoji, platform, access }) {
+      if (this.role !== 'admin') fail('forbidden', 'Staff only.');
+      const c = this.channel(id);
+      name = String(name ?? c.name).trim().slice(0, 40); desc = String(desc ?? c.desc).trim().slice(0, 200);
+      if (!name) fail('bad_input', 'Give the chat room a name.');
+      if (hasBad(name + ' ' + desc)) fail('bad_word', 'Blocked: that contains a word that is not allowed.');
+      await updateDoc(doc(db, 'channels', id), {
+        name, desc, emoji: String(emoji ?? c.emoji).slice(0, 8),
+        platform: ['all', ...P_KEYS].includes(platform) ? platform : c.platform,
+        access: ['open', 'request', 'invite'].includes(access) ? access : c.access,
+      });
+    },
+    async 'channel.delete'({ id }) {
+      if (this.role !== 'admin') fail('forbidden', 'Staff only.');
+      const c = this.channel(id);
+      await deleteDoc(doc(db, 'channels', id));
+      await this.log('room_delete', { id, name: c.name }, '');
+    },
+    // A player: join an open room, ask to join a room "on request", or accept an invitation.
+    async 'channel.join'({ id }) {
+      if (this.state.blocked) fail('blocked', 'You cannot do this right now.');
+      const c = this.channel(id);
+      const ref = doc(db, 'channels', id), path = new FieldPath('members', this.uid);
+      const mine = c.members.find(m => m.id === this.uid);
+      if (mine?.s === 'invited') await updateDoc(ref, path, { name: mine.name, s: 'member' });
+      else if (mine) fail('exists', mine.s === 'pending' ? 'Your request is waiting for staff.' : mine.s === 'removed' ? 'Staff removed you from this chat room.' : 'You are already in.');
+      else if (c.access === 'open') await updateDoc(ref, path, { name: this.name, s: 'member' });
+      else if (c.access === 'request') await updateDoc(ref, path, { name: this.name, s: 'pending' });
+      else fail('forbidden', 'This chat room is by invitation only.');
+      return { status: mine?.s === 'invited' || c.access === 'open' ? 'member' : 'pending' };
+    },
+    // Leave a room, decline an invitation or take back a request.
+    async 'channel.leave'({ id }) {
+      await updateDoc(doc(db, 'channels', id), new FieldPath('members', this.uid), deleteField());
+    },
+    // Staff: let in / invite / remove a player (s: member | invited | removed), or forget them (s: null).
+    async 'channel.member'({ id, user, s }) {
+      if (this.role !== 'admin') fail('forbidden', 'Staff only.');
+      const c = this.channel(id);
+      const ref = doc(db, 'channels', id), path = new FieldPath('members', user.id);
+      if (s === null) await updateDoc(ref, path, deleteField());
+      else if (['member', 'invited', 'removed'].includes(s)) await updateDoc(ref, path, { name: String(user.name || 'Player').slice(0, 30), s });
+      else fail('bad_input', 'Unknown choice.');
+      if (s === 'removed' || s === 'member') await this.log('room_' + (s === 'member' ? 'add' : 'remove'), user, c.name);
     },
     async history({ room }) { await this.watchRoom(room); return { room, messages: this.state.rooms[room] || [] }; },
 

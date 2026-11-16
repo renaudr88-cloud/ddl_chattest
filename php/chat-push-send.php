@@ -16,7 +16,8 @@ if (!is_array($in)) chat_json(400, ['error' => 'Bad request.']);
 $kind = ($in['kind'] ?? '') === 'tag' ? 'tag' : 'dm';
 $room = (string)($in['room'] ?? '');
 $text = trim(preg_replace('/\s+/u', ' ', (string)($in['text'] ?? '')));
-if (!preg_match('/^(general|tournament|premier|raffle|dm):[a-z]+(:ddl-\d+:ddl-\d+)?$/', $room)) chat_json(400, ['error' => 'Bad room.']);
+if (!preg_match('/^(general|tournament|premier|raffle|dm):[a-z]+(:ddl-\d+:ddl-\d+)?$/', $room)
+    && !preg_match('/^ch:[A-Za-z0-9]{1,40}$/', $room)) chat_json(400, ['error' => 'Bad room.']);
 
 $to = [];
 foreach ((array)($in['to'] ?? []) as $t) {
@@ -53,6 +54,8 @@ $name = mb_substr(trim((string)($p['name'] ?? '')) ?: (trim((string)($p['dartsmi
 
 $body = $text !== '' ? mb_substr($text, 0, 140) : '📷 Picture';
 $where = ['general' => 'General', 'tournament' => 'Tournament', 'premier' => 'Premier League', 'raffle' => 'Raffles'][explode(':', $room)[0]] ?? '';
+// A chat room staff made: its name, as the app sends it (only used in the notification title).
+if (str_starts_with($room, 'ch:')) $where = mb_substr(trim(preg_replace('/[\x00-\x1F]+/u', ' ', (string)($in['where'] ?? ''))), 0, 40) ?: 'a chat room';
 $payload = $kind === 'dm'
     ? ['title' => '💬 ' . $name, 'body' => $body, 'url' => '/?dm=' . $uid, 'tag' => $room]
     : ['title' => '@ ' . $name . ' tagged you' . ($where ? ' in ' . $where : ''), 'body' => $body, 'url' => '/?room=' . rawurlencode($room), 'tag' => 'tag-' . $room];
