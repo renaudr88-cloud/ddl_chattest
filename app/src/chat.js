@@ -277,9 +277,10 @@ class ChatClient {
       } else if (this.state.blocked) this.connect();
     }, onErr));
 
+    // Only the chats of the platform I am looking at start now; the other platform's chats start when I switch.
+    // (Every room is 40 messages: starting all of them at once made opening the app slow.)
+    this.watchPlatformRooms(this.state.platform, () => this.set({ status: 'online' }));
     for (const p of P_KEYS) {
-      this.watchRoom('general:' + p, () => this.set({ status: 'online' }));
-      this.watchRoom('tournament:' + p);
       this.sub('friendlies:' + p, onSnapshot(query(collection(db, 'platforms', p, 'friendlies'), orderBy('ts', 'desc'), limit(60)), s => {
         const now = Date.now();
         const all = s.docs.map(d => this.outFriendly(d, p)).filter(f => f.status === 'open' || f.status === 'matched');
@@ -361,16 +362,8 @@ class ChatClient {
         if (c.my === 'member' && before[c.id] === 'pending') toast(`You are in: ${c.name}. 💬`);
       }
       this.channelsLoaded = true;
-      let n = 0;
-      for (const c of channels) {
-        const room = 'ch:' + c.id;
-        if (c.my === 'member' && n < 15) { n++; this.watchRoom(room); }
-        else if (this.subs.has('room:' + room) && this.role !== 'admin') {
-          this.subs.get('room:' + room)(); this.subs.delete('room:' + room);
-          this.set(st => { const rooms = { ...st.rooms }; delete rooms[room]; return { rooms }; });
-        }
-      }
       this.set({ channels });
+      this.followChannels(channels);
     }, onErr));
 
     this.sub('dms', onSnapshot(query(collection(db, 'dms'), where('members', 'array-contains', this.uid)), s => {
@@ -398,6 +391,24 @@ class ChatClient {
     // Don't spin forever: if nothing arrives within 10 s, show the "Can't reach the chat" screen.
     clearTimeout(this.connectTimer);
     this.connectTimer = setTimeout(() => { if (this.state.status === 'connecting') this.set({ status: 'offline' }); }, 10000);
+  }
+  // General + Tournament chat of one platform.
+  watchPlatformRooms(p, onFirst) {
+    this.watchRoom('general:' + p, onFirst);
+    this.watchRoom('tournament:' + p);
+  }
+  // Rooms staff made: I follow the ones I am a member of, on the platform I am looking at (max 15).
+  followChannels(channels = this.state.channels || []) {
+    let n = 0;
+    for (const c of channels) {
+      const room = 'ch:' + c.id;
+      const here = c.platform === 'all' || c.platform === this.state.platform;
+      if (c.my === 'member' && here && n < 15) { n++; this.watchRoom(room); }
+      else if (c.my !== 'member' && this.subs.has('room:' + room) && this.role !== 'admin') {
+        this.subs.get('room:' + room)(); this.subs.delete('room:' + room);
+        this.set(st => { const rooms = { ...st.rooms }; delete rooms[room]; return { rooms }; });
+      }
+    }
   }
   sub(name, off) { this.subs.get(name)?.(); this.subs.set(name, off); }
   stopAll(keep = []) {
@@ -527,6 +538,7 @@ class ChatClient {
     if (p === this.state.platform) return;
     this.set({ platform: p });
     AsyncStorage.setItem(PLATFORM_KEY, p).catch(() => {});
+    if (this.uid && this.state.status === 'online') { this.watchPlatformRooms(p); this.followChannels(); }
   }
 
   /* ---------- shapes the screens use ---------- */
@@ -1126,11 +1138,16 @@ class ChatClient {
   }
 
   /* ---------- pictures ----------
-     The phone shrinks the picture (max 1000 px, JPEG) and it is stored inside the message in Firestore,
-     so no extra server or paid Firebase Storage is needed. Rules allow up to 400 KB per picture. */
+     Live: the phone shrinks the picture and sends it to the DDL website (php/chat-upload.php); the message only
+     keeps its link. Then a chat full of photos stays light: a photo only loads when it scrolls into view.
+     If the website can't take it (test version, no connection to the site), the old way is used: the shrunk picture
+     is stored inside the message in Firestore (rules allow up to 400 KB). */
   async uploadImage(uri, maxChars = 380_000) {
     const { width, height } = await new Promise((res, rej) => Image.getSize(uri, (w, h) => res({ width: w, height: h }), rej))
       .catch(() => ({ width: 1000, height: 1000 }));
+    if (!TEST_MODE && UPLOAD_URL) {
+      try { return await this.uploadToSite(uri, width, height); } catch {}
+    }
     let out = null;
     for (const [max, q] of [[1000, 0.6], [800, 0.45], [640, 0.35]]) {
       const resize = width >= height ? { width: Math.min(width, max) } : { height: Math.min(height, max) };
@@ -1139,6 +1156,24 @@ class ChatClient {
       if (out.length < maxChars) return out;
     }
     throw new Error('That picture is too large. Try another one.');
+  }
+  async uploadToSite(uri, width, height) {
+    const token = await AsyncStorage.getItem(TOKEN_KEY);
+    if (!token) throw new Error('no token');
+    const max = 1280;
+    const resize = width >= height ? { width: Math.min(width, max) } : { height: Math.min(height, max) };
+    const r = await manipulateAsync(uri, [{ resize }], { compress: 0.75, format: SaveFormat.JPEG });
+    const form = new FormData();
+    if (Platform.OS === 'web') form.append('image', await (await fetch(r.uri)).blob(), 'photo.jpg');
+    else form.append('image', { uri: r.uri, name: 'photo.jpg', type: 'image/jpeg' });
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = setTimeout(() => ctl?.abort(), 30000);
+    try {
+      const res = await fetch(UPLOAD_URL, { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form, signal: ctl?.signal });
+      const data = await res.json();
+      if (!res.ok || !/^https:\/\/ddl-online\.com\/uploads\/chat\/[0-9A-Za-z-]+\.jpg$/.test(data?.url || '')) throw new Error('upload');
+      return data.url;
+    } finally { clearTimeout(timer); }
   }
 }
 

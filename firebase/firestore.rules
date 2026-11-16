@@ -71,8 +71,10 @@ service cloud.firestore {
     }
     function answer(o) { return text(o, 50) && o.size() > 0; }
     function picture(u) {
-      // Pictures are shrunk by the app and stored in the document itself (JPEG, max ~400 KB).
-      return u == null || (u is string && u.size() < 400000 && u.matches('data:image/jpeg;base64,[A-Za-z0-9+/=]+'));
+      // A link to a picture on the DDL website (php/chat-upload.php, see UPLOAD_BASE_URL in chat-config.php),
+      // or (old way / fallback) the shrunk picture stored in the document itself (JPEG, max ~400 KB).
+      return u == null || (u is string && u.size() < 200 && u.matches('https://ddl-online[.]com/uploads/chat/[0-9A-Za-z-]+[.]jpg'))
+        || (u is string && u.size() < 400000 && u.matches('data:image/jpeg;base64,[A-Za-z0-9+/=]+'));
     }
     // Dartswap: up to 3 pictures per listing.
     function photos(l) {
