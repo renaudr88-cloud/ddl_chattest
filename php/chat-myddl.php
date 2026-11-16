@@ -146,7 +146,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
                 'id' => (int)$g['id'], 'name' => $name, 'season' => (string)($g['season'] ?? ''),
                 'group' => (string)$g['group_name'], 'draws' => (int)($g['show_draws'] ?? 0) === 1,
                 'table' => $table,
-                'fixtures' => array_values(array_filter($fixtures, fn($f) => $f['league'] === (string)$g['name'] && (string)$f['group'] === (string)$g['group_name'])),
+                // Only matches of this group (by id: the same league name and group come back every season).
+                'fixtures' => array_values(array_filter($fixtures, fn($f) => (int)($f['groupId'] ?? 0) === (int)$g['group_id'])),
                 'url' => rtrim(CHAT_SITE_URL, '/') . '/view-league.php?id=' . (int)$g['id'],
             ];
         }

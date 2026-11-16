@@ -130,17 +130,19 @@ function ls_current_for(PDO $db, array $fixtureIds): array {
 
 // My league matches that are not played yet (against one opponent when $with is given), with their current plan.
 function ls_my_fixtures(PDO $db, int $uid, int $with = 0): array {
-    $sql = "SELECT m.id, m.player1_id, m.player2_id, m.game_week, g.group_name, l.name AS league,
+    // Only leagues that are still running: a league name (and group) can come back every season.
+    $sql = "SELECT m.id, m.player1_id, m.player2_id, m.game_week, m.group_id, g.group_name, l.name AS league,
                    o.id AS oid, o.dartsmind_username AS odm, o.name AS oname
             FROM league_group_matches m
             JOIN league_groups g ON g.id = m.group_id
             JOIN leagues l ON l.id = g.league_id
             JOIN players o ON o.id = IF(m.player1_id = ?, m.player2_id, m.player1_id)
             WHERE (m.player1_id = ? OR m.player2_id = ?)
-              AND (m.player1_score IS NULL OR m.player1_score = '') AND (m.missed IS NULL OR m.missed = 0)"
+              AND (m.player1_score IS NULL OR m.player1_score = '') AND (m.missed IS NULL OR m.missed = 0)
+              AND l.completed_at IS NULL"
             . ($with ? ' AND o.id = ?' : '') . "
             ORDER BY m.game_week ASC, m.id ASC
-            LIMIT 20";
+            LIMIT 40";
     $st = $db->prepare($sql);
     $st->execute($with ? [$uid, $uid, $uid, $with] : [$uid, $uid, $uid]);
     $rows = $st->fetchAll(PDO::FETCH_ASSOC);
@@ -148,7 +150,7 @@ function ls_my_fixtures(PDO $db, int $uid, int $with = 0): array {
     $list = [];
     foreach ($rows as $r) {
         $list[] = [
-            'fixture' => (int)$r['id'], 'league' => (string)$r['league'], 'group' => (string)$r['group_name'], 'week' => (int)$r['game_week'],
+            'fixture' => (int)$r['id'], 'league' => (string)$r['league'], 'group' => (string)$r['group_name'], 'groupId' => (int)$r['group_id'], 'week' => (int)$r['game_week'],
             'opponent' => ['id' => 'ddl-' . $r['oid'], 'name' => ls_name($r['odm'], $r['oname'], (int)$r['oid'])],
             'plan' => ls_out($plans[(int)$r['id']] ?? null),
         ];
