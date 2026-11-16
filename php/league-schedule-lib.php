@@ -131,6 +131,8 @@ function ls_current_for(PDO $db, array $fixtureIds): array {
 // My league matches that are not played yet (against one opponent when $with is given), with their current plan.
 function ls_my_fixtures(PDO $db, int $uid, int $with = 0): array {
     // Only leagues that are still running: a league name (and group) can come back every season.
+    // Not played = no score yet. Never compare the score with '' directly: in MySQL a score of 0 equals '',
+    // so a match lost 0-3 by player 1 looked unplayed. CAST(... AS CHAR) keeps the 0.
     $sql = "SELECT m.id, m.player1_id, m.player2_id, m.game_week, m.group_id, g.group_name, l.name AS league,
                    o.id AS oid, o.dartsmind_username AS odm, o.name AS oname
             FROM league_group_matches m
@@ -138,7 +140,7 @@ function ls_my_fixtures(PDO $db, int $uid, int $with = 0): array {
             JOIN leagues l ON l.id = g.league_id
             JOIN players o ON o.id = IF(m.player1_id = ?, m.player2_id, m.player1_id)
             WHERE (m.player1_id = ? OR m.player2_id = ?)
-              AND (m.player1_score IS NULL OR m.player1_score = '') AND (m.missed IS NULL OR m.missed = 0)
+              AND (m.player1_score IS NULL OR CAST(m.player1_score AS CHAR) = '') AND (m.missed IS NULL OR m.missed = 0)
               AND l.completed_at IS NULL"
             . ($with ? ' AND o.id = ?' : '') . "
             ORDER BY m.game_week ASC, m.id ASC
