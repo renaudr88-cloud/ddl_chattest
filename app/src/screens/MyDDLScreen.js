@@ -104,10 +104,10 @@ export default function MyDDLScreen({ onOpenDM }) {
         </>}
 
         {data && part === 'leagues' && <>
-          {data.leagues.length ? data.leagues.map(l => <League key={l.id + l.group} l={l} onMessage={o => message(o)} />)
+          {data.leagues.length ? data.leagues.map(l => <League key={l.id + l.group} l={l} onMessage={o => message(o, l.platform || 'dartsmind')} />)
             : <View style={ui.card}>
               <Text style={{ color: C.fg, fontWeight: '800', fontSize: 16 }}>You are not in a league right now</Text>
-              <Text style={{ color: C.muted }}>Leagues are played on Dartsmind, one match a week against the players in your group.</Text>
+              <Text style={{ color: C.muted }}>Leagues are played on Dartsmind or Scolia, one match a week against the players in your group.</Text>
               <Btn kind="pri" title="How to join a league" onPress={() => site('league-explained.php')} />
             </View>}
         </>}
@@ -210,9 +210,12 @@ function League({ l, onMessage }) {
     : p.status === 'proposed' ? `📅 ${when(p.at)} · waiting for an answer` : 'Not planned yet';
   return (
     <View style={ui.card}>
-      <View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <PlatformLogo platform={platformInfo(l.platform || 'dartsmind')} size={22} />
+        <View style={{ flex: 1 }}>
         <Text style={styles.cardTitle}>{l.name}</Text>
         <Text style={styles.cardSub}>{[l.season, l.group && 'Group ' + l.group].filter(Boolean).join(' · ')}</Text>
+        </View>
       </View>
       <View style={styles.table}>
         <View style={[styles.tr, styles.th]}>

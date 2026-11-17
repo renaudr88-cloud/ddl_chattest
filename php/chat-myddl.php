@@ -113,8 +113,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     // My leagues: table of my group + my matches still to play (with their League Match Planner time).
     $leagues = [];
     try {
+        // Dartsmind or Scolia league (leagues.platform, made by the website's league-platform-lib.php).
+        $lgPlat = false;
+        try { $lgPlat = (bool)$db->query("SHOW COLUMNS FROM leagues LIKE 'platform'")->fetch(); } catch (Throwable $e) {}
+        $lgScoliaName = false;
+        try { $lgScoliaName = (bool)$db->query("SHOW COLUMNS FROM players LIKE 'scolia_username'")->fetch(); } catch (Throwable $e) {}
         $st = $db->prepare("
-            SELECT l.id, l.name, l.display_name, l.season, l.region, l.show_draws, g.id AS group_id, g.group_name
+            SELECT l.id, l.name, l.display_name, l.season, l.region, l.show_draws, g.id AS group_id, g.group_name,
+                   " . ($lgPlat ? "l.platform" : "'dartsmind' AS platform") . "
             FROM leagues l
             JOIN league_groups g ON g.league_id = l.id
             JOIN league_group_players gp ON gp.group_id = g.id
@@ -130,17 +136,21 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         }
         $tbl = $db->prepare("
             SELECT s.player_id, s.played, s.won, s.drawn, s.lost, s.legs_for, s.legs_against, s.points,
-                   p.dartsmind_username, p.name
+                   p.dartsmind_username, p.name" . ($lgScoliaName ? ", p.scolia_username" : ", NULL AS scolia_username") . "
             FROM league_group_standings s JOIN players p ON p.id = s.player_id
             WHERE s.group_id = ?
             ORDER BY s.points DESC, (s.legs_for - s.legs_against) DESC, s.legs_for DESC, s.legs_against ASC");
         foreach ($groups as $g) {
+            $isScolia = ($g['platform'] ?? 'dartsmind') === 'scolia';
             $tbl->execute([(int)$g['group_id']]);
             $table = [];
             foreach ($tbl->fetchAll(PDO::FETCH_ASSOC) as $i => $r) {
                 $table[] = [
                     'pos' => $i + 1, 'id' => 'ddl-' . (int)$r['player_id'], 'me' => (int)$r['player_id'] === $uid,
-                    'name' => myddl_name($r['dartsmind_username'], $r['name'], (int)$r['player_id']),
+                    // A Scolia league: the Scolia name first.
+                    'name' => $isScolia && trim((string)$r['scolia_username']) !== ''
+                        ? myddl_name($r['scolia_username'], $r['name'], (int)$r['player_id'])
+                        : myddl_name($r['dartsmind_username'], $r['name'], (int)$r['player_id']),
                     'p' => (int)$r['played'], 'w' => (int)$r['won'], 'd' => (int)$r['drawn'], 'l' => (int)$r['lost'],
                     'diff' => (int)$r['legs_for'] - (int)$r['legs_against'], 'pts' => (int)$r['points'],
                 ];
@@ -149,6 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             $leagues[] = [
                 'id' => (int)$g['id'], 'name' => $name, 'season' => (string)($g['season'] ?? ''),
                 'group' => (string)$g['group_name'], 'draws' => (int)($g['show_draws'] ?? 0) === 1,
+                'platform' => $isScolia ? 'scolia' : 'dartsmind',
                 'table' => $table,
                 // Only matches of this group (by id: the same league name and group come back every season).
                 'fixtures' => array_values(array_filter($fixtures, fn($f) => (int)($f['groupId'] ?? 0) === (int)$g['group_id'])),

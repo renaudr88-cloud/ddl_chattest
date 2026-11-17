@@ -4,6 +4,22 @@
 require_once 'session.php';
 require_once 'db.php';   // footer.php: unread notifications
 $isLoggedIn = isset($_SESSION['user_name']);   // for navbar.php
+
+// The Scolia leagues that are running (leagues.platform = 'scolia', see league-platform-lib.php).
+$scoliaLeagues = [];
+if (is_file(__DIR__ . '/league-platform-lib.php')) {
+    require_once __DIR__ . '/league-platform-lib.php';
+    try {
+        if (ddl_league_platform_column($pdo)) {
+            $scoliaLeagues = $pdo->query("SELECT l.id, l.name, l.display_name, l.season, l.region, l.league_type,
+                    (SELECT COUNT(*) FROM league_groups g WHERE g.league_id = l.id) AS groups_n
+                FROM leagues l
+                WHERE l.platform = 'scolia' AND l.completed_at IS NULL AND (l.is_visible = 1 OR l.is_visible IS NULL)
+                ORDER BY l.season DESC, l.name ASC LIMIT 50")->fetchAll(PDO::FETCH_ASSOC);
+        }
+    } catch (Throwable $e) { error_log('scolia-leagues: ' . $e->getMessage()); }
+}
+$h = fn($v) => htmlspecialchars((string)$v, ENT_QUOTES);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -27,6 +43,11 @@ $isLoggedIn = isset($_SESSION['user_name']);   // for navbar.php
     .sg-list{margin:0;padding-left:20px;line-height:1.8}
     .sg-btn{display:inline-block;background:#0a9a2e;color:#fff !important;font:800 16px Poppins,sans-serif;padding:13px 22px;border-radius:12px;text-decoration:none;margin:12px 8px 0 0}
     .sg-btn.sec{background:#0a1f44}
+    .sg-league{display:flex;align-items:center;gap:12px;text-decoration:none;color:#0a1f44 !important;border-left:5px solid #0a9a2e}
+    .sg-league span{flex:1}
+    .sg-league b{display:block;font:700 18px Oswald,sans-serif;text-transform:uppercase}
+    .sg-league small{color:#6b7488}
+    .sg-league i{color:#0a9a2e}
   </style>
 </head>
 <body>
@@ -37,6 +58,14 @@ $isLoggedIn = isset($_SESSION['user_name']);   // for navbar.php
   <span>Weekly league darts on your Scolia board, against the players in your group.</span>
 </div>
 <div class="sg-wrap">
+  <?php foreach ($scoliaLeagues as $l): ?>
+    <a class="sg-card sg-league" href="view-league.php?id=<?= (int)$l['id'] ?>">
+      <span><b><?= $h(trim((string)$l['display_name']) ?: $l['name']) ?></b>
+        <small><?= $h(ctype_digit((string)$l['season']) ? 'Season ' . $l['season'] : $l['season']) ?><?= $l['league_type'] ? ' · ' . $h($l['league_type']) : '' ?><?= $l['region'] ? ' · ' . $h($l['region']) : '' ?><?= (int)$l['groups_n'] > 1 ? ' · ' . (int)$l['groups_n'] . ' groups' : '' ?></small></span>
+      <i class="fa-solid fa-chevron-right"></i>
+    </a>
+  <?php endforeach; ?>
+  <?php if (!$scoliaLeagues): ?>
   <div class="sg-card">
     <span class="sg-soon">Coming soon</span>
     <h2>The first Scolia season is on its way</h2>
@@ -49,6 +78,13 @@ $isLoggedIn = isset($_SESSION['user_name']);   // for navbar.php
     <a class="sg-btn" href="scolia-board.php">Link my Scolia board</a>
     <a class="sg-btn sec" href="league-explained.php">How DDL leagues work</a>
   </div>
+  <?php else: ?>
+  <div class="sg-card">
+    <h2>Play your league matches on Scolia</h2>
+    <p style="margin:0">Link your Scolia board, so your league results can fill in by themselves.</p>
+    <a class="sg-btn" href="scolia-board.php">Link my Scolia board</a>
+  </div>
+  <?php endif; ?>
 </div>
 <?php include 'footer.php'; ?>
 </body>
