@@ -1,30 +1,42 @@
-// Shown once after the first login (and again via Settings → How the chat works): 3 short steps.
+// Shown once after the first login (and again via Settings → How the chat works): 5 short steps.
 import { useState } from 'react';
 import { View, Text, Image, Modal, TouchableOpacity, ScrollView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Btn } from '../components';
 import { C, themed } from '../theme';
 
-const KEY = 'ddl-chat-welcome-1';
+// Version 2 (My DDL, chat rooms, league planner): everyone sees the tour once more after this update.
+const KEY = 'ddl-chat-welcome-2';
 export const welcomeSeen = () => AsyncStorage.getItem(KEY).then(v => !!v).catch(() => true);
 
 const STEPS = [
   { icon: '👋', title: 'Welcome to DDL Chat', lines: [
     ['🎯', 'Dartsmind and Scolia each have their own chats. Switch at the top.'],
-    ['💬', 'General chat for everyone, Tournament chat for match day, Raffles for approved players.'],
+    ['💬', 'General chat for everyone, Tournament chat for match day. Premier League and Raffles for the players who are in them.'],
     ['🙂', 'Keep it friendly: bad words are blocked and staff can mute, kick or ban.'],
   ] },
-  { icon: '🏆', title: 'Tournaments', lines: [
-    ['🏆', 'In the Tournament chat you always see the open tournaments. Tap Sign up to join on ddl-online.com.'],
-    ['⚔️', 'When your match is ready, "Your match: vs …" appears. Tap Message to talk to your opponent.'],
-    ['📋', 'In a private chat you see your opponent\'s Dartsmind name. Tap Copy to invite them.'],
+  { icon: '🏆', title: 'My DDL: tournaments', lines: [
+    ['🏆', 'Tap My DDL at the bottom: your tournaments, with the date and how many players are in.'],
+    ['✅', 'Check-in open? A red dot appears. Tap Check in now. No check-in = you do not play.'],
+    ['➕', 'Join open tournaments right here, or the reserve list when one is full.'],
+    ['⚔️', 'Match ready? "Your match is ready: vs …" appears with a button to message your opponent.'],
+  ] },
+  { icon: '📈', title: 'My DDL: leagues', lines: [
+    ['📊', 'My DDL → Leagues: the table of your group and the matches you still have to play.'],
+    ['💬', 'Tap Message / plan to talk to your opponent.'],
+    ['📅', 'In that private chat tap 📅 to suggest a day and time. Your opponent accepts, and you both get a reminder 1 hour before.'],
+  ] },
+  { icon: '👥', title: 'Chat rooms', lines: [
+    ['＋', 'Chat → ＋ Rooms (at the end of the row): chat rooms made by DDL staff.'],
+    ['🌐', 'Open rooms: tap Join. "On request": tap Ask to join and staff let you in.'],
+    ['✉️', 'Invited to a room? You see it there: tap Accept.'],
   ] },
   { icon: '✨', title: 'Handy tips', lines: [
     ['👆', 'Tap a player\'s name for a private chat.'],
     ['@', 'Type @ and a name to tag someone.'],
     ['✋', 'Hold a message to react 👍 🎯 🔥 or to reply.'],
     ['🔔', 'Messages → DDL notifications: your notifications from the website.'],
-    ['🎯', 'Friendlies: post a card, it stays 15 minutes.'],
+    ['📲', 'Put DDL Chat on your home screen and turn on notifications, so you never miss your match.'],
   ] },
 ];
 
