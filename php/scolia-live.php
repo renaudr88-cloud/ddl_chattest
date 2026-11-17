@@ -21,6 +21,7 @@ if (isset($_GET['json'])) {
     exit;
 }
 require_once 'session.php';
+$isLoggedIn = isset($_SESSION['user_name']);   // for navbar.php
 ?>
 <!DOCTYPE html>
 <html lang="en">

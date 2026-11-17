@@ -5,6 +5,7 @@
 require_once 'session.php';
 require_once 'db.php';
 require_login();
+$isLoggedIn = true;   // for navbar.php
 require_once __DIR__ . '/scolia-api-lib.php';
 
 $uid = (int)($_SESSION['user_id'] ?? 0);
@@ -44,7 +45,7 @@ $h = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES);
     .sb-hero{background:linear-gradient(135deg,#0a1f44,#0f2c5c 60%,#0a1f44);color:#fff;text-align:center;padding:96px 20px 30px;border-bottom:3px solid #0a9a2e}
     .sb-hero p{font-family:Oswald,sans-serif;letter-spacing:4px;color:#3ccf5f;font-size:13px;text-transform:uppercase;margin:0}
     .sb-hero h1{font-family:Oswald,sans-serif;font-size:38px;text-transform:uppercase;margin:4px 0 6px;color:#fff}
-    .sb-hero span{color:#c9d5ee;font-size:15px;display:block;max-width:560px;margin:0 auto}
+    .sb-hero span{color:#c9d5ee;font:15px Poppins,sans-serif;display:block;max-width:560px;margin:0 auto}
     .sb-wrap{max-width:640px;margin:24px auto 60px;padding:0 14px;box-sizing:border-box;font-family:Poppins,sans-serif;color:#0a1f44}
     .sb-card{background:#fff;border-radius:18px;box-shadow:0 6px 22px rgba(10,31,68,.09);padding:22px;margin-bottom:18px}
     .sb-card h2{font-family:Oswald,sans-serif;text-transform:uppercase;font-size:20px;margin:0 0 10px}
