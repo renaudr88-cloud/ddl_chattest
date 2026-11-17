@@ -1,0 +1,8 @@
+{
+  "scoliaUrl": "wss://game.scoliadarts.com/api/v1/external",
+  "accessToken": "PUT-THE-SCOLIA-ACCESS-TOKEN-HERE",
+  "siteUrl": "https://ddl-online.com",
+  "secret": "A-LONG-RANDOM-SECRET-ALSO-IN-chat-config.php",
+  "port": 8787,
+  "pollSeconds": 30
+}

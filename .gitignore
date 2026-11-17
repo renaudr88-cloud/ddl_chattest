@@ -13,3 +13,7 @@ dist/
 # test mode pictures
 server/dev-uploads/
 server/.dev-staff-password
+
+# Scolia bridge: the access token and the shared secret, and its saved match state
+scolia/config.json
+scolia/state.json

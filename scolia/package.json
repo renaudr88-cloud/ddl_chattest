@@ -1,0 +1,14 @@
+{
+  "name": "ddl-scolia-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reads the throws of the players' Scolia boards (Scolia External API) and turns them into DDL match results.",
+  "main": "bridge.js",
+  "scripts": {
+    "start": "node bridge.js",
+    "test": "node --test x01.test.js flow.test.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
