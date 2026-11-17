@@ -65,7 +65,7 @@ function chat_match_alerts(PDO $db): int {
                 $claim->execute([(int)$r['id'], (int)$me]);
                 if ($claim->rowCount() === 0 || $bye) continue;   // already told, or a bye (nothing to play)
                 $platform = ($r['platform'] ?? '') === 'scolia' ? 'scolia' : 'dartsmind';
-                $name = trim((string)$oppName) ?: (trim((string)$oppDm) ?: 'your opponent');
+                $name = trim((string)$oppDm) ?: (trim((string)$oppName) ?: 'your opponent');   // Dartsmind name first, like in the chat
                 $payload = [
                     'title' => '🎯 Your match is ready',
                     'body' => mb_substr(trim((string)$r['tournament']), 0, 60) . ($r['round'] ? ' · Round ' . (int)$r['round'] : '') . ': vs ' . mb_substr($name, 0, 30),

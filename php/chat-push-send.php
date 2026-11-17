@@ -50,7 +50,7 @@ try {
 $st = $db->prepare('SELECT name, dartsmind_username FROM players WHERE id = ?');
 $st->execute([$uid]);
 $p = $st->fetch(PDO::FETCH_ASSOC) ?: [];
-$name = mb_substr(trim((string)($p['name'] ?? '')) ?: (trim((string)($p['dartsmind_username'] ?? '')) ?: 'A player'), 0, 30);
+$name = mb_substr(trim((string)($p['dartsmind_username'] ?? '')) ?: (trim((string)($p['name'] ?? '')) ?: 'A player'), 0, 30);   // Dartsmind name, like in the chat
 
 $body = $text !== '' ? mb_substr($text, 0, 140) : '📷 Picture';
 $where = ['general' => 'General', 'tournament' => 'Tournament', 'premier' => 'Premier League', 'raffle' => 'Raffles'][explode(':', $room)[0]] ?? '';
