@@ -21,6 +21,7 @@ if (isset($_GET['json'])) {
     exit;
 }
 require_once 'session.php';
+require_once 'db.php';   // footer.php: unread notifications
 $isLoggedIn = isset($_SESSION['user_name']);   // for navbar.php
 ?>
 <!DOCTYPE html>
@@ -85,5 +86,6 @@ $isLoggedIn = isset($_SESSION['user_name']);   // for navbar.php
   tick();
 })();
 </script>
+<?php include 'footer.php'; ?>
 </body>
 </html>

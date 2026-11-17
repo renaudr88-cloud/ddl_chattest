@@ -2,6 +2,7 @@
 // Scolia Leagues: coming soon. The DDL leagues are played on Dartsmind for now; this page is the place for the
 // Scolia leagues once they start (menu: Scolia > Scolia Leagues).
 require_once 'session.php';
+require_once 'db.php';   // footer.php: unread notifications
 $isLoggedIn = isset($_SESSION['user_name']);   // for navbar.php
 ?>
 <!DOCTYPE html>
@@ -49,5 +50,6 @@ $isLoggedIn = isset($_SESSION['user_name']);   // for navbar.php
     <a class="sg-btn sec" href="league-explained.php">How DDL leagues work</a>
   </div>
 </div>
+<?php include 'footer.php'; ?>
 </body>
 </html>

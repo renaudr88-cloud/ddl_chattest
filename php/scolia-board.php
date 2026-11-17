@@ -112,5 +112,6 @@ $h = fn($s) => htmlspecialchars((string)$s, ENT_QUOTES);
     <p class="sb-small"><a href="scolia-live.php">Watch Scolia matches live →</a></p>
   </div>
 </div>
+<?php include 'footer.php'; ?>
 </body>
 </html>
