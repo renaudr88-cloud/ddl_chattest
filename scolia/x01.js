@@ -24,8 +24,9 @@ function emptyStats() {
 }
 
 // players: [{ id, serial }, { id, serial }]  (player 1 = index 0, as in the DDL fixture)
-// legsToWin: first to N legs (best of 7 = 4). start: 501. first: who throws first in leg 1 (0 or 1).
-function createMatch({ players, legsToWin = 3, start = 501, first = 0 }) {
+// legsToWin: first to N legs (best of 7 = 4). start: 501. first: who throws first in leg 1 (0 or 1),
+// or null: the first board that throws a dart starts (after the bull-up in the Scolia app).
+function createMatch({ players, legsToWin = 3, start = 501, first = null }) {
   if (!Array.isArray(players) || players.length !== 2) throw new Error('A match needs two players.');
   const m = {
     players: players.map(p => ({ id: p.id, serial: String(p.serial) })),
@@ -64,6 +65,8 @@ function addThrow(m, serial, sector, time) {
   if (m.winner !== null) return { ok: false, ignored: 'match over' };
   const who = indexOf(m, serial);
   if (who < 0) return { ok: false, ignored: 'unknown board' };
+  // Nobody has thrown yet and we do not know who starts: the first dart decides.
+  if (m.turn === null) { m.turn = m.legStarter = who; m.log.push({ t: time, p: who, starts: true }); }
   if (who !== m.turn) {
     m.log.push({ t: time, p: who, sector, ignored: 'not your turn' });
     return { ok: false, ignored: 'not your turn' };
@@ -120,7 +123,7 @@ function addThrow(m, serial, sector, time) {
 // the turn is over anyway: what was seen counts, the turn still counts as 3 darts.
 function addTakeout(m, serial, falseTakeout) {
   const who = indexOf(m, serial);
-  if (falseTakeout || who !== m.turn || m.winner !== null || m.turnDarts.length === 0) return { ok: false };
+  if (falseTakeout || m.turn === null || who !== m.turn || m.winner !== null || m.turnDarts.length === 0) return { ok: false };
   endTurn(m, m.turnStart - m.left[who]);
   return { ok: true, turnOver: true };
 }

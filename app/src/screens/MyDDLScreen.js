@@ -3,7 +3,7 @@
 // Leagues: the table of my group and my matches still to play, with a button to message / plan with the opponent.
 // Everything comes from php/chat-myddl.php; signing up and checking in run the website's own scripts there.
 import { useEffect, useState } from 'react';
-import { View, Text, ScrollView, Modal, Pressable, TouchableOpacity, Linking, ActivityIndicator, Image } from 'react-native';
+import { View, Text, ScrollView, Modal, Pressable, TouchableOpacity, Linking, ActivityIndicator, Image, TextInput } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { chat, useChat } from '../chat';
 import { Header, Btn, Empty, RoomPicker, PlatformLogo, toast, showError, s as ui } from '../components';
@@ -89,6 +89,8 @@ export default function MyDDLScreen({ onOpenDM }) {
               </View>
             </View>))}
 
+          {st.platform === 'scolia' && data.scolia && <ScoliaBoard serial={data.scolia.serial} />}
+
           <Text style={[ui.section, { marginTop: 4, marginBottom: 0 }]}>My tournaments</Text>
           {mine.length ? mine.map(t => <MyTournament key={t.id} t={t} busy={busy === t.id} onCheckIn={() => checkIn(t)} />)
             : <Empty text="You are not in a tournament yet. Pick one below." />}
@@ -114,6 +116,47 @@ export default function MyDDLScreen({ onOpenDM }) {
       <JoinSheet t={join} onClose={() => setJoin(null)} onConfirm={() => doJoin(join)} />
       {result && <ResultSheet m={result} onClose={() => setResult(null)} />}
       <AvgSheet t={avg} onClose={() => setAvg(null)} onDone={() => { const t = avg; setAvg(null); doJoin(t); }} />
+    </View>
+  );
+}
+
+// My Scolia board: with its serial number linked, results of DDL Scolia matches fill in by themselves
+// (the DDL Scolia bridge follows both boards). "Check" asks whether the board is online and calibrated.
+function ScoliaBoard({ serial }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [state, setState] = useState(null);   // { ready, message } after a check
+  const run = async (fn, after) => {
+    setBusy(true);
+    try { const r = await fn(); setState(r.ready === null || r.ready === undefined ? null : r); after?.(r); }
+    catch (e) { showError(e); }
+    setBusy(false);
+  };
+  const save = () => run(() => chat.request('scolia.board', { serial: text }), () => setText(''));
+  const check = () => run(() => chat.request('scolia.check'));
+  const remove = () => run(() => chat.request('scolia.board', { serial: '' }), () => { setState(null); toast('Board removed.'); });
+  return (
+    <View style={ui.card}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <PlatformLogo platform={platformInfo('scolia')} size={22} />
+        <Text style={{ color: C.fg, fontWeight: '800', fontSize: 16 }}>My Scolia board</Text>
+      </View>
+      {serial ? <>
+        <Text style={{ color: C.fg, fontSize: 18, fontWeight: '800', letterSpacing: 1 }}>{serial}</Text>
+        {state && <Text style={{ color: state.ready ? C.ok : C.warn, fontWeight: '700' }}>{state.ready ? '🟢 ' : '🔴 '}{state.message}</Text>}
+        <Text style={{ color: C.muted, fontSize: 13 }}>In DDL Scolia matches your result and stats fill in by themselves when both players linked a board.</Text>
+        <View style={ui.row}>
+          <Btn kind="pri" title="Check my board" loading={busy} onPress={check} style={{ flexGrow: 1 }} />
+          <Btn small title="Remove" onPress={remove} />
+        </View>
+      </> : <>
+        <Text style={{ color: C.muted, fontSize: 13 }}>Link your board once: in DDL Scolia matches your result and stats then fill in by themselves, no screenshot needed.</Text>
+        <TextInput value={text} onChangeText={setText} placeholder="Serial number of your board" placeholderTextColor={C.muted}
+          autoCapitalize="characters" autoCorrect={false} maxLength={40} style={ui.input} />
+        <Text style={{ color: C.muted, fontSize: 12 }}>You find it in the Scolia app with your board, or on the label of your Scolia device.</Text>
+        <Btn kind="pri" title="Save my board" loading={busy} disabled={text.trim().length < 3} onPress={save} />
+      </>}
+      <Btn small kind="ghost" title="📺 Watch Scolia matches live" onPress={() => site('scolia-live.php')} />
     </View>
   );
 }

@@ -43,7 +43,7 @@ async function site(file, data) {
     headers: { 'Content-Type': 'application/json', ...sign(body) },
     body: data ? body : undefined,
   });
-  if (!res.ok) throw new Error(`${file}: HTTP ${res.status}`);
+  if (!res.ok) { const e = new Error(`${file}: HTTP ${res.status}`); e.status = res.status; throw e; }
   return res.json();
 }
 
@@ -84,7 +84,7 @@ async function refresh() {
     if (!ok) continue;
     now.add(info.match);
     if (!matches.has(info.match)) {
-      matches.set(info.match, { info, game: x01.createMatch({ players: info.players, legsToWin: info.legsToWin || 3, start: info.start || 501, first: info.first || 0 }), sent: false });
+      matches.set(info.match, { info, game: x01.createMatch({ players: info.players, legsToWin: info.legsToWin || 3, start: info.start || 501, first: info.first === 0 || info.first === 1 ? info.first : null }), sent: false });
       log(`match ${info.match}: ${info.players[0].name || info.players[0].id} vs ${info.players[1].name || info.players[1].id}, first to ${info.legsToWin || 3}`);
       saveState();
     }
@@ -184,14 +184,18 @@ async function sendPending() {
       const ans = await site('scolia-result.php', r);
       log(`match ${r.match}: result sent (${ans.message || 'ok'})`);
       pending.shift(); saveState();
-    } catch (e) { log(`match ${r.match}: result not sent yet: ${e.message}`); return; }
+    } catch (e) {
+      // 400/404/409: the website will never take this one (wrong players, no winner): it is kept there for admins, stop sending.
+      if ([400, 404, 409].includes(e.status)) { log(`match ${r.match}: website refused the result (${e.message})`); pending.shift(); saveState(); continue; }
+      log(`match ${r.match}: result not sent yet: ${e.message}`); return;
+    }
   }
 }
 
 // ---------- live score (for the scoreboard) ----------
 const listeners = new Map();   // match id -> Set of http responses (Server-Sent Events)
 function liveOf(m) {
-  return { match: m.info.match, tournament: m.info.tournament, players: m.info.players.map(p => ({ id: p.id, name: p.name || '', board: boards.get(String(p.serial))?.status || 'Offline' })), ...x01.live(m.game) };
+  return { match: m.info.match, tournament: m.info.tournament, started: m.game.log.length > 0, players: m.info.players.map(p => ({ id: p.id, name: p.name || '', board: boards.get(String(p.serial))?.status || 'Offline' })), ...x01.live(m.game) };
 }
 function push(m) {
   const set = listeners.get(m.info.match);
@@ -204,6 +208,24 @@ http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
   const parts = u.pathname.split('/').filter(Boolean);
   if (parts[0] === 'boards') return json(200, [...boards.values()].map(b => ({ serial: b.serial, status: b.status, phase: b.phase, error: b.errorType, problem: b.problem })));
+  // Board check (website: "is my board ready?", check-in): connect for a moment if we are not connected already.
+  if (parts[0] === 'check') {
+    const serial = String(u.searchParams.get('serial') || '').trim();
+    if (!/^[A-Za-z0-9-]{3,40}$/.test(serial)) return json(400, { error: 'Bad serial number.' });
+    const known = boards.get(serial);
+    const answer = b => json(200, { serial, status: b.status, phase: b.phase, error: b.errorType, problem: b.problem });
+    if (known && (known.status !== 'Offline' || known.problem)) return answer(known);
+    const b = known || new Board(serial);
+    const t0 = Date.now();
+    const tick = setInterval(() => {
+      if (b.status !== 'Offline' || b.problem || Date.now() - t0 > 6000) {
+        clearInterval(tick);
+        answer(b);
+        if (!known) b.close();
+      }
+    }, 150);
+    return;
+  }
   if (parts[0] === 'live' && !parts[1]) return json(200, [...matches.values()].filter(m => !m.sent).map(liveOf));
   if (parts[0] === 'live') {
     const m = matches.get(isNaN(parts[1]) ? parts[1] : Number(parts[1]));

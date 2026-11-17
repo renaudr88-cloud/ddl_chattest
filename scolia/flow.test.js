@@ -99,6 +99,8 @@ test('a wrong access token stops the board instead of retrying forever', { timeo
     let boards = [];
     for (let i = 0; i < 40 && boards.filter(b => b.problem).length < 2; i++) { await wait(100); boards = await fetch(`http://127.0.0.1:${LIVE}/boards`).then(r => r.json()).catch(() => []); }
     const byS = Object.fromEntries(boards.map(b => [b.serial, b.problem]));
+    const check = await fetch(`http://127.0.0.1:${LIVE}/check?serial=SBC-D`).then(r => r.json());
+    assert.strictEqual(check.problem, '4102 invalid access token');
     assert.strictEqual(byS['SBC-C'], '4102 invalid access token');
     assert.strictEqual(byS['NOPE'], '4100 invalid serial number');
   } finally { bridge.kill(); mockServer.close(); }

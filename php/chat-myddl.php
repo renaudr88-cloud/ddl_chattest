@@ -159,7 +159,33 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         error_log('chat-myddl leagues: ' . $e->getMessage());
     }
 
-    chat_json(200, ['tournaments' => ['mine' => $mine, 'open' => $open], 'leagues' => $leagues, 'avg' => $avg ?: null]);
+    // My Scolia board (scolia-board.php): its serial number, for automatic results in Scolia matches.
+    $scolia = null;
+    if (is_file(__DIR__ . '/scolia-api-lib.php')) {
+        require_once __DIR__ . '/scolia-api-lib.php';
+        $scolia = ['serial' => scolia_serial_of($db, $uid)];
+    }
+    chat_json(200, ['tournaments' => ['mine' => $mine, 'open' => $open], 'leagues' => $leagues, 'avg' => $avg ?: null, 'scolia' => $scolia]);
+}
+
+/* ---------- My Scolia board: save / remove the serial number, or check the board ---------- */
+// POST {"action":"scolia_board","serial":"ABC-123"} (serial "" removes it) -> {ok, serial, ready, message}
+// POST {"action":"scolia_check"}                                          -> {ok, serial, ready, message}
+$scoliaIn = json_decode(file_get_contents('php://input') ?: '', true);
+if (is_array($scoliaIn) && in_array($scoliaIn['action'] ?? '', ['scolia_board', 'scolia_check'], true)) {
+    require_once __DIR__ . '/scolia-api-lib.php';
+    $uid = $MYDDL['uid'];
+    if ($scoliaIn['action'] === 'scolia_board') {
+        $raw = trim((string)($scoliaIn['serial'] ?? ''));
+        $serial = scolia_serial_clean($raw);
+        if ($raw !== '' && $serial === '') chat_json(400, ['error' => 'That is not a valid serial number (letters, digits and dashes).']);
+        if (($e = scolia_serial_save($pdo, $uid, $serial)) !== '') chat_json(400, ['error' => $e]);
+        if ($serial === '') chat_json(200, ['ok' => true, 'serial' => '', 'ready' => null, 'message' => 'Board removed.']);
+    }
+    $serial = scolia_serial_of($pdo, $uid);
+    if ($serial === '') chat_json(400, ['error' => 'Link your Scolia board first.']);
+    [$ready, $words] = scolia_board_words(scolia_bridge_get('/check?serial=' . urlencode($serial)));
+    chat_json(200, ['ok' => true, 'serial' => $serial, 'ready' => $ready, 'message' => $words]);
 }
 
 /* ============================== POST: sign up / check in / average ============================== */

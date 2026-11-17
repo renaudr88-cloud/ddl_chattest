@@ -18,8 +18,16 @@ test('sectors', () => {
   assert.deepStrictEqual(parseSector('X9'), { points: 0, double: false });
 });
 
-test('turns alternate, the other board is ignored', () => {
+test('the first board that throws starts when nobody is set to start', () => {
   const m = createMatch({ players: [{ id: 1, serial: A }, { id: 2, serial: B }] });
+  addThrow(m, B, 'T20');
+  assert.strictEqual(m.turn, 1);
+  assert.strictEqual(m.legStarter, 1);
+  assert.strictEqual(addThrow(m, A, 'T20').ignored, 'not your turn');
+});
+
+test('turns alternate, the other board is ignored', () => {
+  const m = createMatch({ players: [{ id: 1, serial: A }, { id: 2, serial: B }], first: 0 });
   assert.strictEqual(addThrow(m, B, 'T20').ignored, 'not your turn');
   turn(m, A, 'T20', 'T20', 'T20');
   assert.strictEqual(m.left[0], 321);
@@ -30,7 +38,7 @@ test('turns alternate, the other board is ignored', () => {
 });
 
 test('bust keeps the score and ends the turn', () => {
-  const m = createMatch({ players: [{ id: 1, serial: A }, { id: 2, serial: B }], start: 40 });
+  const m = createMatch({ players: [{ id: 1, serial: A }, { id: 2, serial: B }], start: 40, first: 0 });
   const r = turn(m, A, 'S20', 'S19', 'S1');   // 40 -> 20 -> 1: bust on the 2nd dart
   assert.strictEqual(r[1].bust, true);
   assert.strictEqual(m.left[0], 40);
@@ -42,7 +50,7 @@ test('bust keeps the score and ends the turn', () => {
 });
 
 test('takeout with fewer darts ends the turn', () => {
-  const m = createMatch({ players: [{ id: 1, serial: A }, { id: 2, serial: B }] });
+  const m = createMatch({ players: [{ id: 1, serial: A }, { id: 2, serial: B }], first: 0 });
   addThrow(m, A, 'T20');
   assert.strictEqual(addTakeout(m, A, false).turnOver, true);
   assert.strictEqual(m.turn, 1);
@@ -52,7 +60,7 @@ test('takeout with fewer darts ends the turn', () => {
 
 test('a full match: legs, checkout, averages, result for the website', () => {
   // 501 in 9 darts for player 1 in leg 1; best of 3 legs (first to 2).
-  const m = createMatch({ players: [{ id: 11, serial: A }, { id: 22, serial: B }], legsToWin: 2 });
+  const m = createMatch({ players: [{ id: 11, serial: A }, { id: 22, serial: B }], legsToWin: 2, first: 0 });
   turn(m, A, 'T20', 'T20', 'T20');      // 321
   turn(m, B, 'S20', 'S20', 'S20');      // 441
   turn(m, A, 'T20', 'T20', 'T20');      // 141

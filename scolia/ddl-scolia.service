@@ -1,0 +1,17 @@
+# systemd service: keeps the DDL Scolia bridge running, also after a restart of the server.
+# Installed by install.sh as /etc/systemd/system/ddl-scolia.service
+[Unit]
+Description=DDL Scolia bridge (Scolia boards -> DDL match results)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/ddl-scolia
+ExecStart=/usr/bin/env node /opt/ddl-scolia/bridge.js
+Restart=always
+RestartSec=5
+User=www-data
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

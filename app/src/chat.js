@@ -875,7 +875,7 @@ class ChatClient {
     // run the website's own scripts there, with every check of the website.
     async 'myddl.get'() {
       const r = await this.site('chat-myddl.php');
-      const data = { tournaments: r.tournaments || { mine: [], open: [] }, leagues: r.leagues || [], avg: r.avg ?? null, at: Date.now() };
+      const data = { tournaments: r.tournaments || { mine: [], open: [] }, leagues: r.leagues || [], avg: r.avg ?? null, scolia: r.scolia ?? null, at: Date.now() };
       const due = data.tournaments.mine.filter(t => t.checkInOpen && !t.checkedIn).map(t => ({ id: t.id, name: t.name }));
       this.set({ myddl: data, checkinDue: due });
       return data;
@@ -884,6 +884,15 @@ class ChatClient {
       const r = await this.site('chat-myddl.php', { method: 'POST', body: { action: 'join', id } });
       if (!r.needAvg) this.actions['myddl.get'].call(this).catch(() => {});
       return r;
+    },
+    // My Scolia board: save (or with '' remove) its serial number, or check whether it is ready.
+    async 'scolia.board'({ serial }) {
+      const r = await this.site('chat-myddl.php', { method: 'POST', body: { action: 'scolia_board', serial: String(serial || '') } });
+      this.set(st => ({ myddl: st.myddl && { ...st.myddl, scolia: { serial: r.serial } } }));
+      return r;
+    },
+    async 'scolia.check'() {
+      return this.site('chat-myddl.php', { method: 'POST', body: { action: 'scolia_check' } });
     },
     async 'myddl.checkin'({ id }) {
       const r = await this.site('chat-myddl.php', { method: 'POST', body: { action: 'checkin', id } });

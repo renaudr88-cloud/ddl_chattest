@@ -19,16 +19,41 @@ Not visible to us: a score the player corrects in the Scolia app (asked Scolia, 
 
 ## Status
 
-- Done: the game logic, the board connections (reconnect, close codes 4000-4104), live score, signed results, tests.
+- Done: the game logic, the board connections (reconnect, close codes 4000-4104), live score, board check, signed results, tests.
+- Website (php/): `scolia-board.php` (a player links their board serial), `scolia-matches.php` and `scolia-result.php`
+  (for the bridge only, signed), `scolia-live.php` (live scoreboard), `scolia-api-lib.php`, `scolia-config.php` (made by install.sh).
+  The app: "My Scolia board" in My DDL (Scolia), via chat-myddl.php.
 - Waiting for Scolia: the access token, and how players link their own board to the DDL account.
-- Next (website): players save their board serial on their profile, `scolia-matches.php` (which matches are on, with
-  serials) and `scolia-result.php` (save the result, signed with the shared secret), the live scoreboard, board check at check-in.
 
-## Running it on the server
+## How a result gets on the bracket
+
+1. `scolia-matches.php` lists the Scolia matches of yesterday to tomorrow without a result where both players linked a board.
+2. The bridge connects to both boards. The first board that throws starts (after the bull-up in the Scolia app).
+3. At the winning double the bridge posts the result to `scolia-result.php`, which saves it through the website's own
+   `update-score-b.php` as the winner with a "read screenshot" (so the bracket moves on as always).
+   Everything the bridge sent is kept in the table `scolia_results` (status saved / skipped / refused / failed).
+4. A match that already has a result (an admin, or a screenshot) is never changed.
+
+## Installing it on the server
+
+Upload this folder (bridge.js, x01.js, package.json, package-lock.json, ddl-scolia.service, install.sh) to the server,
+for example to /root/ddl-scolia, then as root:
 
 ```
-cd scolia
-npm install
-cp config.example.json config.json     # fill in the token and the secret; config.json is never committed
-node bridge.js                         # or as a service (systemd / pm2), so it restarts by itself
+sh /root/ddl-scolia/install.sh
+```
+
+It installs Node.js if needed, copies the bridge to /opt/ddl-scolia, makes the shared secret (in /opt/ddl-scolia/config.json
+and /var/www/html/scolia-config.php) and starts the service `ddl-scolia`. When Scolia gives the access token:
+
+```
+nano /opt/ddl-scolia/config.json        # "accessToken": "..."
+systemctl restart ddl-scolia
+journalctl -u ddl-scolia -f             # what it is doing
+```
+
+## Testing without Scolia
+
+```
+npm install && npm test                 # the game logic, and a whole match through a pretend Scolia
 ```
