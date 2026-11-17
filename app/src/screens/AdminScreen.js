@@ -35,7 +35,10 @@ export default function AdminScreen({ onBack, onUser, startTab }) {
       <Header title="Moderation" subtitle={`${st.online} online now`} onBack={onBack} />
       <View style={{ padding: 14, gap: 10 }}>
         <Segmented options={[['stats', 'Stats'], ['members', 'Members'], ['reports', nReports ? `Reports (${nReports})` : 'Reports'], ['log', 'Log']]} value={tab} onChange={setTab} />
-        {tab === 'members' && <TextInput style={ui.input} placeholder="Search members" placeholderTextColor={C.muted} value={q} onChangeText={setQ} />}
+        {tab === 'members' && <>
+          <TextInput style={ui.input} placeholder="Search members" placeholderTextColor={C.muted} value={q} onChangeText={setQ} />
+          <Text style={{ color: C.muted, fontSize: 12 }}>Tap a player to mute, kick or ban. Delete a message: tap Delete next to it in the chat, or hold the message → 🗑 Delete.</Text>
+        </>}
       </View>
       {tab === 'stats' ? <Stats /> : tab === 'reports' ? <ReportsList onUser={onUser} /> : tab === 'members' ? (
         <FlatList data={members} keyExtractor={m => m.id} ListEmptyComponent={<Empty text="No members yet." />}

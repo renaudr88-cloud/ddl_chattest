@@ -176,7 +176,7 @@ export const s = themed(C => ({
   role: { color: C.white, backgroundColor: C.orange, fontSize: 9, fontWeight: '800', letterSpacing: 1, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, overflow: 'hidden' },
   seg: { flexDirection: 'row', borderWidth: 1, borderColor: C.line, borderRadius: R.sm + 2, overflow: 'hidden', alignSelf: 'flex-start' },
   segBtn: { paddingVertical: 7, paddingHorizontal: 12, backgroundColor: C.panel },
-  segOn: { backgroundColor: C.navy2 },
+  segOn: { backgroundColor: C.orange },   // the chosen tab must stand out
   segTxt: { color: C.muted, fontWeight: '700', fontSize: 13 },
   pick: { borderWidth: 2, borderColor: C.line, borderRadius: R.sm + 2, paddingVertical: 8, paddingHorizontal: 16, backgroundColor: C.bg },
   pickOn: { borderColor: C.orange, backgroundColor: 'rgba(251,88,1,0.12)' },

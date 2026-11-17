@@ -129,7 +129,7 @@ export default function HomeScreen() {
   if (dm) body = <ChatScreen room={dm.room} title={dm.other.name} subtitle={`Private chat · ${platformInfo(dm.room.split(':')[1]).name}${dm.other.role === 'admin' ? ' · DDL staff' : ''}`} onBack={() => { setTab(dm.back || 'messages'); setDm(null); }} onUser={onUser}
     other={dm.other} initialPlan={dm.plan} key={dm.room + (dm.plan || '')}
     below={dm.room.split(':')[1] === 'dartsmind' && <DartsmindBar other={dm.other} />} />;
-  else if (admin) body = <AdminScreen onBack={() => setAdmin(false)} onUser={setSheet} startTab={admin === 'reports' ? 'reports' : undefined} />;
+  else if (admin) body = <AdminScreen onBack={() => setAdmin(false)} onUser={setSheet} startTab={admin === 'reports' || admin === 'members' ? admin : undefined} />;
   else if (tab === 'chat') {
     const hasRaffle = st.platform === RAFFLE_PLATFORM;
     const hasPremier = st.platform === 'dartsmind' && (isAdmin || st.premier?.member);
@@ -218,7 +218,7 @@ export default function HomeScreen() {
         </View>
       )}
       {sheet && <MemberSheet user={sheet} onClose={() => setSheet(null)} onChat={chatWith} onChallenge={challenge} />}
-      <Settings visible={settings} theme={theme} me={st.me} onClose={() => setSettings(false)} onModeration={() => { setSettings(false); setAdmin(true); }}
+      <Settings visible={settings} theme={theme} me={st.me} onClose={() => setSettings(false)} onModeration={() => { setSettings(false); setAdmin('members'); }}
         onHelp={() => { setSettings(false); setWelcome(true); }} onInstall={() => { setSettings(false); setInstall(true); }} />
       <InstallGuide visible={install} onClose={() => setInstall(false)} />
       <Welcome visible={welcome} onClose={() => setWelcome(false)} />
