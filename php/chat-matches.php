@@ -12,11 +12,11 @@ $uid = (int)$me['uid'];
 
 // With the platform (Dartsmind or Scolia) when the website has it (tournaments.platform, players.scolia_username);
 // older databases without those columns: the same list without them.
-$withPlatform = "t.platform AS platform, o.scolia_username AS osc,";
+$withPlatform = "t.platform AS platform, o.scolia_username AS osc, t.exclude_from_seeding AS xs, t.u50_ranked AS u50, t.r5065_ranked AS r5065,";
 $rows = null;
 foreach ([$withPlatform, ''] as $extra) try {
     $st = chat_db()->prepare("
-        SELECT m.id, m.round, m.bracket, t.name AS tournament, $extra
+        SELECT m.id, m.round, m.bracket, m.player1_id AS p1, t.name AS tournament, $extra
                o.id AS oid, o.name AS oname, o.photo AS ophoto, o.dartsmind_username AS odm
         FROM matches m
         JOIN tournaments t ON t.id = m.tournament_id
@@ -41,6 +41,10 @@ foreach ($rows as $r) {
         'match' => (int)$r['id'], 'tournament' => (string)$r['tournament'],
         'round' => (int)$r['round'], 'bracket' => (string)($r['bracket'] ?? ''),
         'platform' => ($r['platform'] ?? '') === 'scolia' ? 'scolia' : 'dartsmind',
+        // For entering the result in the app: am I player 1 (score1), and is it ranked (screenshot only)?
+        'me1' => (int)($r['p1'] ?? 0) === $uid,
+        'ranked' => stripos((string)$r['tournament'], 'cricket') === false
+            && ((isset($r['xs']) && (int)$r['xs'] === 0) || (int)($r['u50'] ?? 0) === 1 || (int)($r['r5065'] ?? 0) === 1),
         'opponent' => [
             'id' => 'ddl-' . $r['oid'], 'role' => 'player',
             'name' => trim((string)$r['oname']) !== '' ? mb_substr(trim((string)$r['oname']), 0, 30) : 'Player ' . $r['oid'],

@@ -857,6 +857,24 @@ class ChatClient {
       await this.actions['myddl.get'].call(this).catch(() => {});
       return r;
     },
+    // Result of my tournament match. The screenshot is read by the website (parse-match-screenshot.php);
+    // saving goes through its update-score-b.php, so ranked tournaments save exactly the screenshot's values.
+    async 'result.shot'({ match, uri, name = 'screenshot.jpg', type = 'image/jpeg' }) {
+      const form = new FormData();
+      form.append('action', 'shot');
+      form.append('match', String(match));
+      if (Platform.OS === 'web') form.append('screenshot', await (await fetch(uri)).blob(), name);
+      else form.append('screenshot', { uri, name, type });
+      const r = await this.siteForm('chat-myddl.php', form);
+      if (!r.ok) fail('shot', r.message || "Couldn't read that screenshot. Try again.");
+      return r;
+    },
+    async 'result.save'({ match, score1, score2, forfeit, stats }) {
+      const r = await this.site('chat-myddl.php', { method: 'POST', body: { action: 'result', match, score1, score2, forfeit: !!forfeit, stats: stats || {} } });
+      this.pollMatches();
+      this.actions['myddl.get'].call(this).catch(() => {});
+      return r;
+    },
     // Average screenshot (Dartsmind, RECENT 100 tab): checked by the website like on its tournament page.
     async 'myddl.avg'({ uri, name = 'screenshot.jpg', type = 'image/jpeg' }) {
       const form = new FormData();

@@ -6,6 +6,10 @@
 // POST {"action":"join","id":12}               -> {ok, status: "joined"|"reserve", message}  or {needAvg: true}
 // POST {"action":"checkin","id":12}            -> {ok, message}
 // POST multipart: action=avg, screenshot=<file> -> the answer of verify-dartsmind-screenshot.php ({ok, message})
+// POST multipart: action=shot, match=<id>, screenshot=<file> -> the answer of parse-match-screenshot.php
+//                 ({ok, message, player1, player2, names_matched}; player1/player2 as in the fixture)
+// POST {"action":"result","match":77,"score1":4,"score2":2,"forfeit":false,"stats":{...}}
+//                 -> {ok, message}  saved by the website's update-score-b.php (ranked: the screenshot's values)
 //
 // Signing up and checking in run the website's OWN scripts (tournament-detail.php for every entry check,
 // then join-tournament.php / join-reserve.php / check-in.php), as if the player clicked the button on the
@@ -162,13 +166,18 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 // Act as this player on the website for this one request: a session that is never stored in a cookie
 // and is thrown away at the end (the website's scripts read $_SESSION['user_id']).
-function myddl_as_player(int $uid): void {
-    global $pdo;
+// $keep: one fixed session per player (only for the chat, never a cookie), kept between requests.
+// Used for results: parse-match-screenshot.php remembers what it read in the session, and
+// update-score-b.php (a later request) saves exactly those values for ranked tournaments.
+function myddl_as_player(int $uid, bool $keep = false): void {
+    global $pdo, $MYDDL;
     ini_set('session.use_cookies', '0');
     ini_set('session.use_only_cookies', '0');
     ini_set('session.use_trans_sid', '0');
     session_cache_limiter('');
-    session_id('ddlchat' . bin2hex(random_bytes(12)));
+    $MYDDL['keep'] = $keep;
+    session_id($keep ? 'ddlchat' . substr(hash_hmac('sha256', 'results:' . $uid, CHAT_SECRET), 0, 40)
+                     : 'ddlchat' . bin2hex(random_bytes(12)));
     session_start();
     $n = $pdo->prepare('SELECT name, dartsmind_username FROM players WHERE id = ?');
     $n->execute([$uid]);
@@ -223,11 +232,25 @@ function myddl_finish(): void {
         [$role, $in] = myddl_place($tid, $uid);
         if ($in) $res = [200, ['ok' => true, 'role' => $role, 'message' => $role === 'player' ? "Checked in. Good luck! 🎯" : 'Checked in as a reserve. You get a notification if a place opens.']];
         else $res = [400, ['error' => 'Check-in did not work. Try again, or check in on ddl-online.com.']];
-    } elseif ($phase === 'avg') {
+    } elseif ($phase === 'avg' || $phase === 'shot') {
         $j = json_decode(trim($out), true);
-        $res = is_array($j) ? [200, $j] : [500, ['ok' => false, 'message' => "Couldn't verify that screenshot. Try again."]];
+        $res = is_array($j) ? [200, $j] : [500, ['ok' => false, 'message' => "Couldn't read that screenshot. Try again."]];
+    } elseif ($phase === 'result') {
+        $mid = (int)($MYDDL['match'] ?? 0);
+        $m = $GLOBALS['pdo']->prepare('SELECT winner_id, score1, score2, score_submitted_by FROM matches WHERE id = ?');
+        $m->execute([$mid]);
+        $row = $m->fetch(PDO::FETCH_ASSOC) ?: [];
+        $text = trim(strip_tags($out));
+        if (($q['error'] ?? '') === 'screenshot_required') $res = [400, ['error' => 'Upload the DartsMind Match Stats screenshot again, then submit.']];
+        elseif (($q['error'] ?? '') === 'forfeit_winner') $res = [400, ['error' => 'A no-show / walkover can only be entered with you as the winner. Did you give up? Your opponent or an admin enters it.']];
+        elseif ($loc !== '' && !empty($row['winner_id'])) $res = [200, ['ok' => true, 'score1' => (int)$row['score1'], 'score2' => (int)$row['score2'],
+            'message' => 'Result saved: ' . (int)$row['score1'] . ' – ' . (int)$row['score2'] . '. 🎯']];
+        elseif ($text !== '') $res = [400, ['error' => mb_substr($text, 0, 200)]];
     }
-    if (session_status() === PHP_SESSION_ACTIVE) { $_SESSION = []; session_destroy(); }
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        if (!empty($MYDDL['keep'])) session_write_close();
+        else { $_SESSION = []; session_destroy(); }
+    }
     http_response_code($res[0]);
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
@@ -240,7 +263,10 @@ function myddl_fail(int $code, string $msg, array $extra = []): void {
     global $MYDDL;
     $MYDDL['phase'] = 'done';
     while (ob_get_level() > 0) ob_end_clean();
-    if (session_status() === PHP_SESSION_ACTIVE) { $_SESSION = []; session_destroy(); }
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        if (!empty($MYDDL['keep'])) session_write_close();
+        else { $_SESSION = []; session_destroy(); }
+    }
     chat_json($code, ['error' => $msg] + $extra);
 }
 
@@ -260,6 +286,44 @@ if ($MYDDL['action'] === 'avg') {
     ob_start();
     include __DIR__ . '/verify-dartsmind-screenshot.php';
     exit;   // myddl_finish() passes on its answer
+}
+
+/* ---------- Results of my tournament match (the website's parse-match-screenshot.php and update-score-b.php) ---------- */
+if ($MYDDL['action'] === 'shot' || $MYDDL['action'] === 'result') {
+    $MYDDL['match'] = (int)($in['match'] ?? 0);
+    $m = $pdo->prepare('SELECT id, tournament_id, bracket, round, player1_id, player2_id, winner_id FROM matches WHERE id = ?');
+    $m->execute([$MYDDL['match']]);
+    $match = $m->fetch(PDO::FETCH_ASSOC);
+    if (!$match || !in_array($MYDDL['uid'], [(int)$match['player1_id'], (int)$match['player2_id']], true)) chat_json(404, ['error' => 'That match was not found.']);
+    if (!empty($match['winner_id'])) chat_json(400, ['error' => 'This match already has a result. Changes: ask an admin.']);
+    myddl_as_player($MYDDL['uid'], true);
+    $_SERVER['REQUEST_METHOD'] = 'POST';
+    if ($MYDDL['action'] === 'shot') {
+        if (!$isMultipart || empty($_FILES['screenshot'])) myddl_fail(400, 'Choose a screenshot first.');
+        $_POST = ['match_id' => (string)$MYDDL['match'], 'source' => 'tournament'];
+        $MYDDL['phase'] = 'shot';
+        ob_start();
+        include __DIR__ . '/parse-match-screenshot.php';
+        exit;
+    }
+    $num = fn($v) => ($v === null || $v === '') ? '' : (string)(0 + $v);
+    $st = is_array($in['stats'] ?? null) ? $in['stats'] : [];
+    $_POST = [
+        'match_id' => (string)$MYDDL['match'],
+        'score1' => (string)(int)($in['score1'] ?? -1), 'score2' => (string)(int)($in['score2'] ?? -1),
+        'bracket' => (string)$match['bracket'], 'round' => (string)$match['round'],
+        'redirect_url' => '/tournament-b.php?id=' . (int)$match['tournament_id'],
+    ];
+    if (!empty($in['forfeit'])) $_POST['forfeit'] = '1';
+    else foreach (['p1_avg', 'p2_avg', 'p1_100s', 'p2_100s', 'p1_140s', 'p2_140s', 'p1_180s', 'p2_180s', 'p1_checkout', 'p2_checkout'] as $k) {
+        if (isset($st[$k]) && $num($st[$k]) !== '') $_POST[$k] = $num($st[$k]);
+    }
+    if ((int)$_POST['score1'] < 0 || (int)$_POST['score2'] < 0) myddl_fail(400, 'Enter both scores.');
+    $_GET = ['round' => (string)$match['round']];
+    $MYDDL['phase'] = 'result';
+    ob_start();
+    include __DIR__ . '/update-score-b.php';
+    exit;
 }
 
 if (!in_array($MYDDL['action'], ['join', 'checkin'], true) || $MYDDL['tid'] <= 0) chat_json(400, ['error' => 'Bad request.']);

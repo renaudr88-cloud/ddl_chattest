@@ -8,6 +8,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { chat, useChat } from '../chat';
 import { Header, Btn, Empty, RoomPicker, PlatformLogo, toast, showError, s as ui } from '../components';
 import { platformInfo } from '../platforms';
+import ResultSheet from './Result';
 import { C, themed } from '../theme';
 
 const site = path => Linking.openURL('https://ddl-online.com/' + path);
@@ -29,6 +30,7 @@ export default function MyDDLScreen({ onOpenDM }) {
   const [join, setJoin] = useState(null);     // tournament to confirm joining
   const [avg, setAvg] = useState(null);       // tournament waiting for an average screenshot
   const [busy, setBusy] = useState(null);     // id of the tournament being joined / checked in
+  const [result, setResult] = useState(null); // my match whose result I am entering
 
   const load = async () => {
     setLoading(true); setError(null);
@@ -81,7 +83,10 @@ export default function MyDDLScreen({ onOpenDM }) {
               <Text style={styles.kicker}>🎯 YOUR MATCH IS READY</Text>
               <Text style={styles.matchVs}>vs {m.opponent.name}</Text>
               <Text style={styles.cardSub}>{m.tournament}{m.round ? ` · Round ${m.round}` : ''}</Text>
-              <Btn kind="pri" title={`💬 Message ${m.opponent.name}`} onPress={() => message(m.opponent, m.platform)} />
+              <View style={ui.row}>
+                <Btn kind="pri" title="📷 Enter result" onPress={() => setResult(m)} style={{ flexGrow: 1 }} />
+                <Btn title={`💬 Message`} onPress={() => message(m.opponent, m.platform)} style={{ flexGrow: 1 }} />
+              </View>
             </View>))}
 
           <Text style={[ui.section, { marginTop: 4, marginBottom: 0 }]}>My tournaments</Text>
@@ -107,6 +112,7 @@ export default function MyDDLScreen({ onOpenDM }) {
       </ScrollView>
 
       <JoinSheet t={join} onClose={() => setJoin(null)} onConfirm={() => doJoin(join)} />
+      {result && <ResultSheet m={result} onClose={() => setResult(null)} />}
       <AvgSheet t={avg} onClose={() => setAvg(null)} onDone={() => { const t = avg; setAvg(null); doJoin(t); }} />
     </View>
   );
