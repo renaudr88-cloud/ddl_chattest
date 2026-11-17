@@ -135,7 +135,8 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
             <Text style={{ fontSize: 18, color: C.white }}>🔍</Text></TouchableOpacity>
           {group && admin && <TouchableOpacity onPress={toggleClose} hitSlop={8}
             accessibilityLabel={closed ? 'Open this chat again' : 'Close this chat'}>
-            <Text style={{ fontSize: 18, color: C.white }}>{closed ? '🔒' : '🔓'}</Text></TouchableOpacity>}
+            <View style={[styles.lockBtn, closed && { backgroundColor: C.bad, borderColor: C.bad }]}>
+              <Text style={styles.lockTxt}>{closed ? '🔒 Closed' : '🔓 Close'}</Text></View></TouchableOpacity>}
           {right}
         </View>} />
       {below}
@@ -152,7 +153,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
           ListEmptyComponent={<View style={{ transform: [{ scaleY: -1 }] }}><Empty text="No messages yet. Say hi 👋" /></View>}
         />}
       <View style={styles.composer}>
-        {closed && <Notice text={admin ? '🔒 You closed this chat (or another staff member did). Players can only read it. Tap 🔒 at the top to open it again.'
+        {closed && <Notice text={admin ? '🔒 You closed this chat (or another staff member did). Players can only read it. Tap "🔒 Closed" at the top to open it again.'
           : '🔒 This chat is closed by staff. You can still read it.'} />}
         {muted && !locked && <Notice text={`You are muted until ${clock(st.me.sanction.muted_until)}. You can still read the chat.`} />}
         {reply && <View style={styles.replyBar}>
@@ -308,6 +309,8 @@ const styles = themed(C => ({
   menuWho: { color: C.muted, fontSize: 13, marginBottom: 6 },
   emojiRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
   emoji: { padding: 4, borderRadius: 12, borderWidth: 1, borderColor: 'transparent' },
+  lockBtn: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)', borderRadius: 14, paddingHorizontal: 9, paddingVertical: 4 },
+  lockTxt: { color: '#fff', fontSize: 12, fontWeight: '800' },
   menuItem: { paddingVertical: 12, borderTopWidth: 1, borderTopColor: C.line },
   menuTxt: { color: C.fg, fontSize: 16, fontWeight: '700' },
   tag: { color: C.orangeSoft, fontWeight: '800' },
