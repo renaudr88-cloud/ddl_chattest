@@ -50,6 +50,7 @@ const initial = {
   blocked: null,           // {reason:'banned'|'kicked', until}
   hiddenDms: {},           // private chats I deleted: room -> time (ms); they come back when a newer message arrives
   pins: {},                // room -> pinned message {text, name, messageId, ts} (staff pin one per channel)
+  closed: {},              // room -> {name, ts} when staff closed that group chat (only staff can still write)
   blockedUsers: [],        // players I blocked: [{id, name}] (blocks/{me}); their messages are hidden for me
   reports: [],             // staff: open reports from players (reports/*)
   myMatches: [],           // my open matches on ddl-online.com: "Your match: vs ..." (php/chat-matches.php)
@@ -515,6 +516,11 @@ class ChatClient {
       const x = s.exists() ? s.data({ serverTimestamps: 'estimate' }) : null;
       this.set(st => ({ pins: { ...st.pins, [room]: x && { text: x.text, name: x.name, messageId: x.messageId || '', ts: ms(x.ts) } } }));
     }, () => {}));
+    // Closed by staff? (closed/{room}): one small document, live while the app is open.
+    this.sub('closed:' + room, onSnapshot(doc(db, 'closed', room), s => {
+      const x = s.exists() ? s.data({ serverTimestamps: 'estimate' }) : null;
+      this.set(st => ({ closed: { ...st.closed, [room]: x && { name: x.name || '', ts: ms(x.ts) } } }));
+    }, () => {}));
   }
   // Who is online (lastSeen in the last 5 minutes). Cached 3 minutes; reads at most 30 players at a time.
   async presence(ids) {
@@ -756,6 +762,7 @@ class ChatClient {
       text = String(text || '').trim().slice(0, 1000);
       if (!text && !imageUrl) fail('empty', 'Write a message or add a picture.');
       this.canPost(text);
+      if (this.state.closed?.[room] && this.role !== 'admin') fail('closed', 'This chat is closed by staff. You can still read it.');
       // @tags: only people whose @name is still in the text, max 10.
       const tags = [];
       for (const m of mentions || []) {
@@ -948,6 +955,14 @@ class ChatClient {
     async 'pin.clear'({ room }) {
       if (this.role !== 'admin') fail('forbidden', 'Staff only.');
       await deleteDoc(doc(db, 'pins', room));
+    },
+    // Staff: close a group chat (everyone can still read it, only staff can write) or open it again.
+    async 'room.close'({ room, close, title }) {
+      if (this.role !== 'admin') fail('forbidden', 'Staff only.');
+      if (String(room).startsWith('dm:')) fail('bad_input', 'Only group chats can be closed.');
+      if (close) await setDoc(doc(db, 'closed', room), { by: this.uid, name: String(this.state.me?.name || '').slice(0, 30), ts: serverTimestamp() });
+      else await deleteDoc(doc(db, 'closed', room));
+      await this.log(close ? 'room_close' : 'room_open', null, `[${roomPlatform(room)}] ` + String(title || room).slice(0, 60));
     },
     // Delete a private chat for me: it disappears from my list and its messages are hidden for me.
     // The other player keeps it. A new message brings the chat back, with only the new messages.

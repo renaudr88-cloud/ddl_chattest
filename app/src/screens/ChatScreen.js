@@ -36,8 +36,13 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
   useEffect(() => { chat.watchPin(room); }, [room]);
   const searchTimer = useRef(null);
   const list = st.rooms[room];
-  const muted = isMuted(st.me);
   const admin = st.me?.role === 'admin';
+  // Closed by staff: players can read but not write (staff still can).
+  const closed = group ? st.closed?.[room] : null;
+  const locked = !!closed && !admin;
+  const muted = isMuted(st.me) || locked;
+  const toggleClose = () => chat.request('room.close', { room, close: !closed, title })
+    .then(() => toast(closed ? 'Chat open again. Everyone can write. 🔓' : 'Chat closed. Players can read it but not write. 🔒')).catch(showError);
 
   useEffect(() => {
     chat.activeRoom = room;
@@ -128,6 +133,9 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <TouchableOpacity onPress={() => { setSearchOn(!searchOn); setQ(''); }} hitSlop={8} accessibilityLabel="Search in this chat">
             <Text style={{ fontSize: 18, color: C.white }}>🔍</Text></TouchableOpacity>
+          {group && admin && <TouchableOpacity onPress={toggleClose} hitSlop={8}
+            accessibilityLabel={closed ? 'Open this chat again' : 'Close this chat'}>
+            <Text style={{ fontSize: 18, color: C.white }}>{closed ? '🔒' : '🔓'}</Text></TouchableOpacity>}
           {right}
         </View>} />
       {below}
@@ -144,7 +152,9 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
           ListEmptyComponent={<View style={{ transform: [{ scaleY: -1 }] }}><Empty text="No messages yet. Say hi 👋" /></View>}
         />}
       <View style={styles.composer}>
-        {muted && <Notice text={`You are muted until ${clock(st.me.sanction.muted_until)}. You can still read the chat.`} />}
+        {closed && <Notice text={admin ? '🔒 You closed this chat (or another staff member did). Players can only read it. Tap 🔒 at the top to open it again.'
+          : '🔒 This chat is closed by staff. You can still read it.'} />}
+        {muted && !locked && <Notice text={`You are muted until ${clock(st.me.sanction.muted_until)}. You can still read the chat.`} />}
         {reply && <View style={styles.replyBar}>
           <View style={{ flex: 1 }}><Text style={styles.quoteName}>↩ Replying to {reply.user.name}</Text>
             <Text style={styles.quoteTxt} numberOfLines={1}>{reply.text || '📷 Picture'}</Text></View>
@@ -166,7 +176,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
           {canPlan && <TouchableOpacity style={styles.icon} onPress={() => { setPlanFixture(null); setPlanOpen(true); }} disabled={muted} accessibilityLabel="Plan a league match"><Text style={{ fontSize: 20 }}>📅</Text></TouchableOpacity>}
           {group && admin && <TouchableOpacity style={styles.icon} onPress={() => setPollOpen(true)} disabled={muted} accessibilityLabel="New poll"><Text style={{ fontSize: 20 }}>📊</Text></TouchableOpacity>}
           <TextInput style={styles.input} value={text} onChangeText={onType} multiline maxLength={1000} editable={!muted}
-            placeholder={room.startsWith('dm:') ? 'Write a private message…' : 'Message… type @ to tag a player'} placeholderTextColor={C.muted} />
+            placeholder={locked ? '🔒 Closed by staff' : room.startsWith('dm:') ? 'Write a private message…' : 'Message… type @ to tag a player'} placeholderTextColor={C.muted} />
           <TouchableOpacity style={[styles.send, (muted || sending) && { opacity: 0.45 }]} onPress={send} disabled={muted || sending}>
             {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendTxt}>SEND</Text>}
           </TouchableOpacity>

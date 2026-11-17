@@ -19,6 +19,7 @@ rules_version = '2';
 //   blocks/{uid}                         players this player blocked: { users: { <uid>: <name> } } (only they can read it)
 //   prefs/{uid}                          my settings: { hiddenDms: { <room>: <time> } } private chats I deleted (only me)
 //   pins/{room}                          the pinned message of a group chat (staff): text, name, messageId, by, ts
+//   closed/{room}                        a group chat staff closed: by, name, ts. Players can read it but not write; staff still can.
 //   reports/{id}                         a player reports a player or message to staff: by, targetId, reason, status open|handled|dismissed
 //   channels/{id}                        chat rooms staff make: name, desc, emoji, platform (all|dartsmind|scolia),
 //                                        access open|request|invite, by, ts, members { <uid>: {name, s: member|pending|invited|removed} }
@@ -159,6 +160,8 @@ service cloud.firestore {
     match /rooms/{room}/messages/{id} {
       allow read: if canRead() && roomOk(room) && roomAccess(room);
       allow create: if canPost() && roomOk(room) && roomAccess(room) && !blockedByOther(room)
+        // A chat room staff closed: only staff can still write in it.
+        && (isAdmin() || !exists(/databases/$(database)/documents/closed/$(room)))
         && request.resource.data.keys().hasOnly(['uid', 'name', 'role', 'avatar', 'text', 'imageUrl', 'mentions', 'tournament', 'reply', 'poll', 'plan', 'ts'])
         // A league match plan card (private chats only): just the id of the plan kept on ddl-online.com (php/chat-league.php).
         && (!('plan' in request.resource.data) || (room.split(':')[0] == 'dm' && request.resource.data.plan is map
@@ -208,6 +211,16 @@ service cloud.firestore {
         && request.resource.data.text is string && request.resource.data.text.size() <= 300
         && request.resource.data.name is string && request.resource.data.name.size() <= 30
         && request.resource.data.messageId is string && request.resource.data.messageId.size() <= 60;
+      allow delete: if isAdmin();
+    }
+
+    // ---------- a closed group chat (staff): everyone can still read it, only staff can write ----------
+    match /closed/{room} {
+      allow read: if canRead() && roomOk(room) && roomAccess(room);
+      allow create, update: if isAdmin() && roomOk(room) && room.split(':')[0] != 'dm'
+        && request.resource.data.keys().hasOnly(['by', 'name', 'ts'])
+        && request.resource.data.by == me() && request.resource.data.ts == request.time
+        && request.resource.data.name is string && request.resource.data.name.size() <= 30;
       allow delete: if isAdmin();
     }
 
