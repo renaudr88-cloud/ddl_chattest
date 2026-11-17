@@ -3,6 +3,7 @@
 // -> {"list": [{id, name, role, avatar, dartsmind}]}  DDL players whose name or Dartsmind name starts with q
 // (or contains it, for 3+ letters). Read only. Used by Messages → + New to start a private chat.
 require __DIR__ . '/chat-config.php';
+require_once __DIR__ . '/chat-names.php';
 chat_cors();
 $me = chat_read_token(chat_bearer());
 if (!$me) chat_json(401, ['error' => 'Log in again.']);
@@ -32,7 +33,7 @@ try {
 
 chat_json(200, ['list' => array_map(fn($p) => [
     'id' => 'ddl-' . $p['id'],
-    'name' => trim((string)$p['name']) !== '' ? mb_substr(trim((string)$p['name']), 0, 30) : 'Player ' . $p['id'],
+    'name' => chat_display_name($p),
     'role' => (int)$p['is_admin'] === 1 ? 'admin' : 'player',
     'avatar' => chat_photo_url((string)($p['photo'] ?? '')),
     'dartsmind' => trim((string)($p['dartsmind_username'] ?? '')) ?: null,

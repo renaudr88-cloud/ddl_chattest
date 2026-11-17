@@ -5,6 +5,7 @@
 //                 league:{name, group, season, pos, size, pts, diff}|null, form:["W","L",...], badges:[{name, img}], profileUrl}}
 // Every part is optional: when one query fails (different table on the site), the rest still comes back.
 require __DIR__ . '/chat-config.php';
+require_once __DIR__ . '/chat-names.php';
 chat_cors();
 $me = chat_read_token(chat_bearer());
 if (!$me) chat_json(401, ['error' => 'Log in again.']);
@@ -26,7 +27,7 @@ if (!preg_match('/^[a-z]{2}(-[a-z]{3})?$/', $cc)) $cc = '';
 
 $out = [
     'id' => 'ddl-' . $id,
-    'name' => mb_substr(trim((string)($p['name'] ?? '')), 0, 40),
+    'name' => chat_display_name(['id' => $id] + $p),
     'dartsmind' => trim((string)($p['dartsmind_username'] ?? '')) ?: null,
     'country' => $cc ?: null,
     'countryName' => $cc ? ($countries[$cc] ?? strtoupper($cc)) : null,

@@ -124,12 +124,32 @@ class ChatClient {
     if (!user) return false;
     // After the switch to DDL accounts, old test logins (anonymous) must log in again with their DDL account.
     if (!TEST_MODE && user.isAnonymous) { await signOut(auth).catch(() => {}); return false; }
+    // Live: fresh tokens from the website, so the chat name (Dartsmind name), staff role and photo are up to date
+    // without logging in again. No connection to the website? Then we go on with what Firebase remembers.
+    if (!TEST_MODE) {
+      const fresh = await this.refreshLogin().catch(() => null);
+      if (fresh) {
+        try { await this.start(fresh.user.name, true); } catch { this.set({ status: 'offline' }); }
+        return true;
+      }
+    }
     try {
       const snap = await getDoc(doc(db, 'users', user.uid));
       if (!snap.exists()) { await signOut(auth); return false; }
       await this.start(snap.data().name, true);
       return true;
     } catch { this.set({ status: 'offline' }); return true; }
+  }
+  async refreshLogin() {
+    const token = await AsyncStorage.getItem(TOKEN_KEY);
+    if (!token) return null;
+    const res = await fetch(LOGIN_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ refresh: true }) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data?.firebaseToken || !data?.user?.name) return null;
+    await AsyncStorage.setItem(TOKEN_KEY, data.token);
+    await signInWithCustomToken(auth, data.firebaseToken);
+    return data;
   }
 
   async login(name, password) {

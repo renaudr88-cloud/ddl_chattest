@@ -5,6 +5,7 @@
 // The player's open matches in running tournaments (table matches, read only), so the chat can show
 // "Your match: vs ..." with a button for a private chat and the opponent's Dartsmind name.
 require __DIR__ . '/chat-config.php';
+require_once __DIR__ . '/chat-names.php';
 chat_cors();
 $me = chat_read_token(chat_bearer());
 if (!$me) chat_json(401, ['error' => 'Log in again.']);
@@ -47,7 +48,7 @@ foreach ($rows as $r) {
             && ((isset($r['xs']) && (int)$r['xs'] === 0) || (int)($r['u50'] ?? 0) === 1 || (int)($r['r5065'] ?? 0) === 1),
         'opponent' => [
             'id' => 'ddl-' . $r['oid'], 'role' => 'player',
-            'name' => trim((string)$r['oname']) !== '' ? mb_substr(trim((string)$r['oname']), 0, 30) : 'Player ' . $r['oid'],
+            'name' => chat_display_name(['id' => $r['oid'], 'name' => $r['oname'], 'dartsmind_username' => $r['odm']]),
             'avatar' => chat_photo_url((string)($r['ophoto'] ?? '')),
             'dartsmind' => trim((string)($r['odm'] ?? '')) ?: null,
             'scolia' => trim((string)($r['osc'] ?? '')) ?: null,

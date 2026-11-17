@@ -3,6 +3,7 @@
 // -> {"user": {"id": "ddl-12", "name": "...", "role": "player", "avatar": "...", "dartsmind": "..."}}
 // Used by the chat to open a private chat from the brackets (?dm=12) and to show the opponent's Dartsmind name.
 require __DIR__ . '/chat-config.php';
+require_once __DIR__ . '/chat-names.php';
 chat_cors();
 $me = chat_read_token(chat_bearer());
 if (!$me) chat_json(401, ['error' => 'Log in again.']);
@@ -19,7 +20,7 @@ if (!$p || in_array(strtolower((string)($p['membership_status'] ?? '')), BLOCKED
 
 chat_json(200, ['user' => [
     'id' => 'ddl-' . $p['id'],
-    'name' => trim((string)$p['name']) !== '' ? mb_substr(trim((string)$p['name']), 0, 30) : 'Player ' . $p['id'],
+    'name' => chat_display_name($p),
     'role' => (int)$p['is_admin'] === 1 ? 'admin' : 'player',
     'avatar' => chat_photo_url((string)($p['photo'] ?? '')),
     'dartsmind' => trim((string)($p['dartsmind_username'] ?? '')) ?: null,

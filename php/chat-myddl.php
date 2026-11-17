@@ -179,11 +179,13 @@ function myddl_as_player(int $uid, bool $keep = false): void {
     session_id($keep ? 'ddlchat' . substr(hash_hmac('sha256', 'results:' . $uid, CHAT_SECRET), 0, 40)
                      : 'ddlchat' . bin2hex(random_bytes(12)));
     session_start();
-    $n = $pdo->prepare('SELECT name, dartsmind_username FROM players WHERE id = ?');
+    $n = $pdo->prepare('SELECT name, email FROM players WHERE id = ?');
     $n->execute([$uid]);
     $r = $n->fetch(PDO::FETCH_ASSOC) ?: [];
+    // The same keys the website's login sets (require_login() in db.php looks at user_email).
     $_SESSION['user_id'] = $uid;
     $_SESSION['user_name'] = (string)($r['name'] ?? '');
+    $_SESSION['user_email'] = (string)($r['email'] ?? '');
 }
 
 // Where am I in this tournament now (straight from the database)?
@@ -233,7 +235,11 @@ function myddl_finish(): void {
         if ($in) $res = [200, ['ok' => true, 'role' => $role, 'message' => $role === 'player' ? "Checked in. Good luck! 🎯" : 'Checked in as a reserve. You get a notification if a place opens.']];
         else $res = [400, ['error' => 'Check-in did not work. Try again, or check in on ddl-online.com.']];
     } elseif ($phase === 'avg' || $phase === 'shot') {
+        // The website's answer is JSON at the end of the output (a PHP notice could come before it).
         $j = json_decode(trim($out), true);
+        if (!is_array($j) && ($at = strpos($out, '{"ok"')) !== false) $j = json_decode(trim(substr($out, $at)), true);
+        if (!is_array($j) && stripos($loc, 'login') !== false) $j = ['ok' => false, 'message' => 'The website asked to log in. Log out of the chat and in again, then try again.'];
+        if (!is_array($j)) error_log('chat-myddl ' . $phase . ': no JSON from the website: ' . mb_substr($out, 0, 300));
         $res = is_array($j) ? [200, $j] : [500, ['ok' => false, 'message' => "Couldn't read that screenshot. Try again."]];
     } elseif ($phase === 'result') {
         $mid = (int)($MYDDL['match'] ?? 0);

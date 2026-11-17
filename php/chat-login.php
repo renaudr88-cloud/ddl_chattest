@@ -1,30 +1,45 @@
 <?php
 // POST /chat-login.php   JSON {"login": "email address", "password": "..."}
+//                    or JSON {"refresh": true} + Authorization: Bearer <token>  (fresh tokens for a logged-in app)
 // -> 200 {"token": "...", "firebaseToken": "...", "user": {...}}  |  401/403 {"error": "..."}
 // Same check as the website's login.php: players.email + password_verify, blocked statuses refused.
 // The app signs in to Firebase with firebaseToken and keeps token for picture uploads (chat-upload.php).
 require __DIR__ . '/chat-config.php';
+require_once __DIR__ . '/chat-names.php';
 chat_cors();
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') chat_json(405, ['error' => 'Use POST.']);
 
 $in = json_decode(file_get_contents('php://input'), true) ?: $_POST;
-$login = trim((string)($in['login'] ?? ''));
-$password = (string)($in['password'] ?? '');
-if ($login === '' || $password === '') chat_json(400, ['error' => 'Enter your email address and your password.']);
 
-// Basic brute-force brake: max 10 failed attempts per IP per 15 minutes (uses APCu when available).
-$ipKey = 'chatlogin_' . ($_SERVER['REMOTE_ADDR'] ?? 'x');
-if (function_exists('apcu_fetch') && (int)apcu_fetch($ipKey) >= 10) chat_json(429, ['error' => 'Too many attempts. Try again in 15 minutes.']);
+// {"refresh": true} with "Authorization: Bearer <token>": the app, already logged in, asks for fresh tokens
+// (the name, staff role and photo from the website as they are now). No password needed.
+$refresh = !empty($in['refresh']) ? chat_read_token(chat_bearer()) : null;
+if (!empty($in['refresh']) && !$refresh) chat_json(401, ['error' => 'Log in again.']);
 
-$st = chat_db()->prepare('SELECT id, name, password_hash, is_admin, membership_status, photo FROM players WHERE email = ? LIMIT 1');
-$st->execute([$login]);
-$u = $st->fetch(PDO::FETCH_ASSOC);
+if ($refresh) {
+    $st = chat_db()->prepare('SELECT id, name, dartsmind_username, is_admin, membership_status, photo FROM players WHERE id = ? LIMIT 1');
+    $st->execute([(int)$refresh['uid']]);
+    $u = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$u) chat_json(401, ['error' => 'Log in again.']);
+} else {
+    $login = trim((string)($in['login'] ?? ''));
+    $password = (string)($in['password'] ?? '');
+    if ($login === '' || $password === '') chat_json(400, ['error' => 'Enter your email address and your password.']);
 
-if (!$u || !password_verify($password, (string)$u['password_hash'])) {
-    if (function_exists('apcu_fetch')) { apcu_add($ipKey, 0, 900); apcu_inc($ipKey); }
-    usleep(400000);
-    chat_json(401, ['error' => 'Incorrect email or password.']);
+    // Basic brute-force brake: max 10 failed attempts per IP per 15 minutes (uses APCu when available).
+    $ipKey = 'chatlogin_' . ($_SERVER['REMOTE_ADDR'] ?? 'x');
+    if (function_exists('apcu_fetch') && (int)apcu_fetch($ipKey) >= 10) chat_json(429, ['error' => 'Too many attempts. Try again in 15 minutes.']);
+
+    $st = chat_db()->prepare('SELECT id, name, dartsmind_username, password_hash, is_admin, membership_status, photo FROM players WHERE email = ? LIMIT 1');
+    $st->execute([$login]);
+    $u = $st->fetch(PDO::FETCH_ASSOC);
+
+    if (!$u || !password_verify($password, (string)$u['password_hash'])) {
+        if (function_exists('apcu_fetch')) { apcu_add($ipKey, 0, 900); apcu_inc($ipKey); }
+        usleep(400000);
+        chat_json(401, ['error' => 'Incorrect email or password.']);
+    }
 }
 if (in_array(strtolower((string)($u['membership_status'] ?? '')), BLOCKED_STATUSES, true)) {
     chat_json(403, ['error' => 'This account has been removed. If you believe this is a mistake, please contact an admin.']);
@@ -33,7 +48,8 @@ if (in_array(strtolower((string)($u['membership_status'] ?? '')), BLOCKED_STATUS
 
 $user = [
     'uid'    => (string)$u['id'],
-    'name'   => trim((string)$u['name']) !== '' ? mb_substr(trim((string)$u['name']), 0, 30) : 'Player ' . $u['id'],
+    // In the chat everyone is known by their Dartsmind name (the real name only when there is none).
+    'name'   => chat_display_name($u),
     'role'   => (int)$u['is_admin'] === 1 ? 'admin' : 'player',
     'avatar' => chat_photo_url((string)($u['photo'] ?? '')),
 ];
