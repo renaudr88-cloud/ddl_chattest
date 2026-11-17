@@ -84,8 +84,8 @@ async function refresh() {
     if (!ok) continue;
     now.add(info.match);
     if (!matches.has(info.match)) {
-      matches.set(info.match, { info, game: x01.createMatch({ players: info.players, legsToWin: info.legsToWin || 3, start: info.start || 501, first: info.first === 0 || info.first === 1 ? info.first : null }), sent: false });
-      log(`match ${info.match}: ${info.players[0].name || info.players[0].id} vs ${info.players[1].name || info.players[1].id}, first to ${info.legsToWin || 3}`);
+      matches.set(info.match, { info, game: x01.createMatch({ players: info.players, legsToWin: info.legsToWin || 3, start: info.start || 501, first: info.first === 0 || info.first === 1 ? info.first : null, format: info.format, totalLegs: info.totalLegs }), sent: false });
+      log(`match ${info.match}: ${info.players[0].name || info.players[0].id} vs ${info.players[1].name || info.players[1].id}, ${info.format === 'fixed' ? (info.totalLegs || 6) + ' legs' : 'first to ' + (info.legsToWin || 3)}`);
       saveState();
     }
   }
@@ -171,7 +171,7 @@ function onTakeout(serial, p) {
 function finish(m) {
   const res = x01.result(m.game);
   log(`match ${m.info.match}: finished ${res.score1}-${res.score2}`);
-  pending.push({ match: m.info.match, tournament: m.info.tournament, players: m.info.players.map(p => p.id), result: res, log: m.game.log.slice(-400) });
+  pending.push({ match: m.info.match, kind: m.info.kind || 'tournament', tournament: m.info.tournament, players: m.info.players.map(p => p.id), result: res, log: m.game.log.slice(-400) });
   m.sent = true;
   saveState();
   syncBoards();

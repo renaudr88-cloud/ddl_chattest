@@ -104,3 +104,18 @@ test('a full match: legs, checkout, averages, result for the website', () => {
   assert.ok(res.p1_avg > 80 && res.p2_avg > 40, JSON.stringify(res));
   assert.strictEqual(live(m).winner, 0);
 });
+
+test('fixed number of legs: a draw is possible (league)', () => {
+  const m = createMatch({ players: [{ id: 1, serial: A }, { id: 2, serial: B }], start: 40, format: 'fixed', totalLegs: 2, first: 0 });
+  turn(m, A, 'D20');                    // leg 1: player 1
+  assert.strictEqual(m.winner, null);
+  turn(m, B, 'D20');                    // leg 2 (player 2 starts): player 2
+  assert.strictEqual(m.winner, -1);
+  const r = result(m);
+  assert.strictEqual(r.finished, true);
+  assert.strictEqual(r.draw, true);
+  assert.strictEqual(r.winner, null);
+  assert.strictEqual(r.score1, 1);
+  assert.strictEqual(r.score2, 1);
+  assert.strictEqual(addThrow(m, A, 'T20').ignored, 'match over');
+});

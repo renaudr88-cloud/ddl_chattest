@@ -153,6 +153,48 @@ function scolia_open_matches(PDO $pdo): array {
     return $out;
 }
 
+// League matches of Scolia leagues that are on now: planned and confirmed in the League Match Planner,
+// from 30 minutes before the planned time until 3 hours after it, no result yet, both players linked a board.
+// The match id for the bridge is "L<id>" (league_group_matches.id), so it never mixes with tournament matches.
+function scolia_open_league_matches(PDO $pdo): array {
+    try {
+        foreach (["leagues LIKE 'platform'", "leagues LIKE 'scolia_format'"] as $c)
+            if (!$pdo->query("SHOW COLUMNS FROM $c")->fetch()) return [];
+        $now = time();
+        $st = $pdo->prepare("SELECT m.id, m.player1_id, m.player2_id, l.id AS league_id, l.name, l.scolia_format, l.scolia_legs,
+                COALESCE(NULLIF(p1.scolia_username, ''), p1.dartsmind_username, p1.name) AS n1, p1.scolia_serial AS s1,
+                COALESCE(NULLIF(p2.scolia_username, ''), p2.dartsmind_username, p2.name) AS n2, p2.scolia_serial AS s2
+            FROM league_group_matches m
+            JOIN league_groups g ON g.id = m.group_id
+            JOIN leagues l ON l.id = g.league_id
+            JOIN league_match_schedule s ON s.fixture_id = m.id AND s.status = 'confirmed'
+            JOIN players p1 ON p1.id = m.player1_id
+            JOIN players p2 ON p2.id = m.player2_id
+            WHERE l.platform = 'scolia' AND l.completed_at IS NULL
+              AND (m.player1_score IS NULL OR CAST(m.player1_score AS CHAR) = '') AND (m.missed IS NULL OR m.missed = 0)
+              AND s.play_ts BETWEEN ? AND ?
+              AND p1.scolia_serial IS NOT NULL AND p1.scolia_serial <> '' AND p2.scolia_serial IS NOT NULL AND p2.scolia_serial <> ''
+            LIMIT 200");
+        $st->execute([$now - 3 * 3600, $now + 30 * 60]);
+        $out = [];
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $legs = max(1, min(21, (int)$r['scolia_legs'] ?: 6));
+            $out[] = [
+                'match' => 'L' . (int)$r['id'], 'kind' => 'league', 'league' => (int)$r['league_id'], 'tournamentName' => (string)$r['name'],
+                'format' => $r['scolia_format'] === 'first' ? 'first' : 'fixed', 'legsToWin' => $legs, 'totalLegs' => $legs,
+                'players' => [
+                    ['id' => (int)$r['player1_id'], 'name' => (string)$r['n1'], 'serial' => (string)$r['s1']],
+                    ['id' => (int)$r['player2_id'], 'name' => (string)$r['n2'], 'serial' => (string)$r['s2']],
+                ],
+            ];
+        }
+        return $out;
+    } catch (Throwable $e) {
+        error_log('scolia league matches: ' . $e->getMessage());
+        return [];
+    }
+}
+
 // What the bridge sent for each match: kept for admins to check (and so a result is never saved twice).
 function scolia_results_table(PDO $pdo): bool {
     try {

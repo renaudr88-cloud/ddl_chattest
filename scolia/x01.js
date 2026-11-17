@@ -26,11 +26,16 @@ function emptyStats() {
 // players: [{ id, serial }, { id, serial }]  (player 1 = index 0, as in the DDL fixture)
 // legsToWin: first to N legs (best of 7 = 4). start: 501. first: who throws first in leg 1 (0 or 1),
 // or null: the first board that throws a dart starts (after the bull-up in the Scolia app).
-function createMatch({ players, legsToWin = 3, start = 501, first = null }) {
+// format 'first' (default): the first to legsToWin legs wins. format 'fixed': exactly totalLegs legs are played
+// (league matches); the one with most legs wins, equal legs is a draw.
+function createMatch({ players, legsToWin = 3, start = 501, first = null, format = 'first', totalLegs = null }) {
   if (!Array.isArray(players) || players.length !== 2) throw new Error('A match needs two players.');
   const m = {
     players: players.map(p => ({ id: p.id, serial: String(p.serial) })),
     legsToWin, start,
+    format: format === 'fixed' ? 'fixed' : 'first',
+    totalLegs: format === 'fixed' ? Math.max(1, Number(totalLegs) || 6) : null,
+    draw: false,                // fixed number of legs, equal legs
     legStarter: first,          // who started the current leg
     turn: first,                // whose turn it is
     left: [start, start],       // score left in this leg
@@ -97,8 +102,12 @@ function addThrow(m, serial, sector, time) {
     st.checkout = Math.max(st.checkout || 0, out);
     st.legs++;
     m.log.push({ t: time, p: who, checkout: out, leg: m.leg });
-    if (st.legs >= m.legsToWin) {
-      m.winner = who;
+    const played = m.stats[0].legs + m.stats[1].legs;
+    const over = m.format === 'fixed' ? played >= m.totalLegs : st.legs >= m.legsToWin;
+    if (over) {
+      const [a, b] = [m.stats[0].legs, m.stats[1].legs];
+      m.winner = m.format === 'fixed' ? (a === b ? -1 : a > b ? 0 : 1) : who;   // -1: draw
+      m.draw = m.winner === -1;
       m.turnDarts = [];
       return { ok: true, checkout: out, legWon: true, matchWon: true };
     }
@@ -135,7 +144,8 @@ function result(m) {
   const [a, b] = m.stats;
   return {
     finished: m.winner !== null,
-    winner: m.winner === null ? null : m.players[m.winner].id,
+    winner: m.winner === null || m.winner === -1 ? null : m.players[m.winner].id,
+    draw: m.winner === -1,
     score1: a.legs, score2: b.legs,
     p1_avg: avg(a), p2_avg: avg(b),
     p1_100s: a.c100, p2_100s: b.c100,

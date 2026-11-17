@@ -2,6 +2,7 @@
 // For the Scolia bridge only (signed): the result of a Scolia match, counted from the throws on both boards.
 // POST {match, tournament, players: [id1, id2], result: {winner, score1, score2, p1_avg, …, p2_checkout}, log: [...]}
 //   -> {ok, message}
+// A league match ({match: "L<id>", kind: "league"}) is saved through submit-league-score.php (standings and all).
 //
 // Saved through the website's own update-score-b.php, as if the winner submitted it with a read screenshot,
 // so the bracket moves on exactly like on the website (winner to the next round, loser to bracket B, notifications).
@@ -25,11 +26,73 @@ $body = file_get_contents('php://input') ?: '';
 if (!scolia_bridge_verified($body)) scolia_out(403, ['error' => 'Not allowed.']);
 $in = json_decode($body, true);
 $r = is_array($in['result'] ?? null) ? $in['result'] : null;
-$mid = (int)($in['match'] ?? 0);
-if (!$mid || !$r || empty($r['finished'])) scolia_out(400, ['error' => 'Bad request.']);
-
+if (!$r || empty($r['finished'])) scolia_out(400, ['error' => 'Bad request.']);
 $pdo = chat_db();
 scolia_results_table($pdo);
+
+/* ---------- a league match ("L<id>"): saved through the website's own submit-league-score.php ---------- */
+if (($in['kind'] ?? '') === 'league' || preg_match('/^L\d+$/', (string)($in['match'] ?? ''))) {
+    $lid = (int)substr((string)$in['match'], 1);
+    $st = $pdo->prepare('SELECT m.*, g.league_id FROM league_group_matches m JOIN league_groups g ON g.id = m.group_id WHERE m.id = ?');
+    $st->execute([$lid]);
+    $lm = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$lm) scolia_out(404, ['error' => 'No such league match.']);
+    // Kept with a negative id in scolia_results, so league and tournament matches never share a row.
+    $keepL = function (string $status, string $note) use ($pdo, $lid, $lm, $body) {
+        $pdo->prepare('DELETE FROM scolia_results WHERE match_id = ?')->execute([-$lid]);
+        $pdo->prepare('INSERT INTO scolia_results (match_id, tournament_id, data, status, note, received_at) VALUES (?, ?, ?, ?, ?, ?)')
+            ->execute([-$lid, -(int)$lm['league_id'], $body, $status, mb_substr($note, 0, 250), time()]);
+    };
+    if ($lm['player1_score'] !== null && (string)$lm['player1_score'] !== '') { $keepL('skipped', 'The match already had a result.'); scolia_out(200, ['ok' => true, 'message' => 'already had a result']); }
+    $ids = [(int)$lm['player1_id'], (int)$lm['player2_id']];
+    if (($in['players'] ?? null) !== $ids) { $keepL('refused', 'Other players than in the league match.'); scolia_out(409, ['error' => 'Players do not match.']); }
+
+    $num = fn($k, $int = true) => isset($r[$k]) && $r[$k] !== null && $r[$k] !== '' ? ($int ? (int)$r[$k] : round((float)$r[$k], 2)) : null;
+    ini_set('session.use_cookies', '0');
+    ini_set('session.use_only_cookies', '0');
+    ini_set('session.use_trans_sid', '0');
+    session_cache_limiter('');
+    session_id('ddlscolia' . bin2hex(random_bytes(12)));
+    session_start();
+    $_SESSION['user_id'] = $ids[0];   // submitted as player 1 of the match
+    $_SERVER['REQUEST_METHOD'] = 'POST';
+    $_POST = [
+        'match_id' => (string)$lid,
+        'player1_score' => (string)(int)$r['score1'], 'player2_score' => (string)(int)$r['score2'],
+        'p1_100_plus' => (string)($num('p1_100s') ?? 0), 'p2_100_plus' => (string)($num('p2_100s') ?? 0),
+        'p1_140_plus' => (string)($num('p1_140s') ?? 0), 'p2_140_plus' => (string)($num('p2_140s') ?? 0),
+        'p1_180s' => (string)($num('p1_180s') ?? 0), 'p2_180s' => (string)($num('p2_180s') ?? 0),
+        'p1_average' => (string)($num('p1_avg', false) ?? ''), 'p2_average' => (string)($num('p2_avg', false) ?? ''),
+        'p1_checkout' => (string)($num('p1_checkout') ?? ''), 'p2_checkout' => (string)($num('p2_checkout') ?? ''),
+    ];
+    register_shutdown_function(function () use ($pdo, $lid, $keepL) {
+        global $SCOLIA;
+        if ($SCOLIA['phase'] !== 'league') return;
+        $out = '';
+        while (ob_get_level() > 0) $out = ob_get_clean() . $out;
+        $_SESSION = [];
+        if (session_status() === PHP_SESSION_ACTIVE) session_destroy();
+        $st = $pdo->prepare('SELECT player1_score, player2_score FROM league_group_matches WHERE id = ?');
+        $st->execute([$lid]);
+        $row = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+        if (isset($row['player1_score']) && $row['player1_score'] !== null && (string)$row['player1_score'] !== '') {
+            $keepL('saved', 'Saved ' . (int)$row['player1_score'] . '-' . (int)$row['player2_score']);
+            scolia_out(200, ['ok' => true, 'message' => 'saved ' . (int)$row['player1_score'] . '-' . (int)$row['player2_score']]);
+        }
+        $why = trim(strip_tags($out)) ?: 'not saved';
+        $keepL('failed', $why);
+        error_log('scolia-result league ' . $lid . ': ' . $why);
+        scolia_out(500, ['error' => mb_substr($why, 0, 200)]);
+    });
+    $SCOLIA['phase'] = 'league';
+    ob_start();
+    include __DIR__ . '/submit-league-score.php';
+    exit;
+}
+
+/* ---------- a tournament match ---------- */
+$mid = (int)($in['match'] ?? 0);
+if (!$mid) scolia_out(400, ['error' => 'Bad request.']);
 $st = $pdo->prepare('SELECT * FROM matches WHERE id = ?');
 $st->execute([$mid]);
 $match = $st->fetch(PDO::FETCH_ASSOC);
