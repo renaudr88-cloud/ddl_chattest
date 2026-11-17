@@ -131,19 +131,25 @@ export default function HomeScreen() {
     below={dm.room.split(':')[1] === 'dartsmind' && <DartsmindBar other={dm.other} />} />;
   else if (admin) body = <AdminScreen onBack={() => setAdmin(false)} onUser={setSheet} startTab={admin === 'reports' || admin === 'members' ? admin : undefined} />;
   else if (tab === 'chat') {
-    const hasRaffle = st.platform === RAFFLE_PLATFORM;
-    const hasPremier = st.platform === 'dartsmind' && (isAdmin || st.premier?.member);
+    // A fixed chat staff hid: gone for players; staff still see it, marked 🙈.
+    const isHidden = k => !!st.hidden?.[`${k}:${st.platform}`];
+    const shown = k => isAdmin || !isHidden(k);
+    const hide = (k, label) => isHidden(k) ? '🙈 ' + label.replace(/^\S+ /, '') : label;
+    const hasRaffle = st.platform === RAFFLE_PLATFORM && shown('raffle');
+    const hasPremier = st.platform === 'dartsmind' && (isAdmin || st.premier?.member) && shown('premier');
+    const hasTournament = shown('tournament');
     // Chat rooms staff made: mine are tabs next to General / Tournament; "＋ Rooms" lists them all.
     const chans = channelsHere(st);
     const myChans = chans.filter(c => c.my === 'member');
     const chan = room.startsWith('ch:') ? chans.find(c => 'ch:' + c.id === room && (c.my === 'member' || isAdmin)) : null;
-    const r = (room === 'raffle' && !hasRaffle) || (room === 'premier' && !hasPremier) || (room.startsWith('ch:') && !chan) ? 'general' : room;
+    const r = (room === 'raffle' && !hasRaffle) || (room === 'premier' && !hasPremier) || (room === 'tournament' && !hasTournament) || (room.startsWith('ch:') && !chan) ? 'general' : room;
     const roomsBadge = chans.filter(c => c.my === 'invited').length + (isAdmin ? chans.reduce((n, c) => n + c.members.filter(m => m.s === 'pending').length, 0) : 0);
     const pendingRaffle = isAdmin ? (st.raffle?.requests || []).filter(x => x.status === 'pending').length : 0;
     const tags = k => mentionCount(st, `${k}:${st.platform}`) + (k === 'tournament' ? newMatches(st, st.platform) : 0);
-    const rooms = [['general', 'General', tags('general')], ['tournament', 'Tournament', tags('tournament')],
-      ...(hasPremier ? [['premier', '🏅 Premier', tags('premier')]] : []),
-      ...(hasRaffle ? [['raffle', '🔒 Raffles', pendingRaffle + tags('raffle')]] : []),
+    const rooms = [['general', 'General', tags('general')],
+      ...(hasTournament ? [['tournament', hide('tournament', 'Tournament'), tags('tournament')]] : []),
+      ...(hasPremier ? [['premier', hide('premier', '🏅 Premier'), tags('premier')]] : []),
+      ...(hasRaffle ? [['raffle', hide('raffle', '🔒 Raffles'), pendingRaffle + tags('raffle')]] : []),
       ...myChans.map(c => ['ch:' + c.id, `${c.emoji} ${c.name}`, mentionCount(st, 'ch:' + c.id)]),
       ...(chan && chan.my !== 'member' ? [['ch:' + chan.id, `${chan.emoji} ${chan.name}`, 0]] : []),
       ['rooms', '＋ Rooms', roomsBadge]];

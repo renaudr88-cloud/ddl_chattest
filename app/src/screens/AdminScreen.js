@@ -15,7 +15,7 @@ export function statusOf(s) {
   return { k: 'ok', label: 'Active', color: C.ok };
 }
 
-const ACTION = { mute: 'muted', unmute: 'unmuted', kick: 'kicked', unkick: 'let back in', ban: 'banned', unban: 'unbanned', delete: 'deleted a message from', swap_delete: 'deleted a listing from', friendly_delete: 'removed a friendly from', staff_add: 'made chat staff:', premier_add: 'put in the Premier League chat:', premier_remove: 'took out of the Premier League chat:', staff_remove: 'removed chat staff:', pin: 'pinned a message from', room_close: 'closed a chat', room_open: 'opened a chat again',
+const ACTION = { mute: 'muted', unmute: 'unmuted', kick: 'kicked', unkick: 'let back in', ban: 'banned', unban: 'unbanned', delete: 'deleted a message from', swap_delete: 'deleted a listing from', friendly_delete: 'removed a friendly from', staff_add: 'made chat staff:', premier_add: 'put in the Premier League chat:', premier_remove: 'took out of the Premier League chat:', staff_remove: 'removed chat staff:', pin: 'pinned a message from', room_close: 'closed a chat', room_open: 'opened a chat again', room_hide: 'hid a chat for players', room_show: 'showed a chat again',
   raffle_approved: 'let into the raffle chat:', raffle_declined: 'declined raffle access for', raffle_removed: 'removed from the raffle chat:' };
 
 export default function AdminScreen({ onBack, onUser, startTab }) {

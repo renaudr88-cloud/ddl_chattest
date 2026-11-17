@@ -51,6 +51,7 @@ const initial = {
   hiddenDms: {},           // private chats I deleted: room -> time (ms); they come back when a newer message arrives
   pins: {},                // room -> pinned message {text, name, messageId, ts} (staff pin one per channel)
   closed: {},              // room -> {name, ts} when staff closed that group chat (only staff can still write)
+  hidden: {},              // room -> true when staff hid that fixed chat (tournament, premier, raffle): only staff see it
   blockedUsers: [],        // players I blocked: [{id, name}] (blocks/{me}); their messages are hidden for me
   reports: [],             // staff: open reports from players (reports/*)
   myMatches: [],           // my open matches on ddl-online.com: "Your match: vs ..." (php/chat-matches.php)
@@ -373,6 +374,11 @@ class ChatClient {
         this.set(st => ({ raffle: { ...st.raffle, requests } }));
       }, onErr));
     }
+
+    // Fixed chats staff hid (hidden/{room}): a handful of small documents.
+    this.sub('hidden', onSnapshot(query(collection(db, 'hidden'), limit(20)), s => {
+      this.set({ hidden: Object.fromEntries(s.docs.map(d => [d.id, true])) });
+    }, () => {}));
 
     // Chat rooms staff made (open, on request, or invite only). I follow the ones I am a member of.
     this.sub('channels', onSnapshot(query(collection(db, 'channels'), limit(60)), s => {
@@ -963,6 +969,14 @@ class ChatClient {
       if (close) await setDoc(doc(db, 'closed', room), { by: this.uid, name: String(this.state.me?.name || '').slice(0, 30), ts: serverTimestamp() });
       else await deleteDoc(doc(db, 'closed', room));
       await this.log(close ? 'room_close' : 'room_open', null, `[${roomPlatform(room)}] ` + String(title || room).slice(0, 60));
+    },
+    // Staff: hide a fixed chat (tournament, premier, raffle) for players, or show it again.
+    async 'room.hide'({ room, hide, title }) {
+      if (this.role !== 'admin') fail('forbidden', 'Staff only.');
+      if (!['tournament', 'premier', 'raffle'].includes(String(room).split(':')[0])) fail('bad_input', 'This chat cannot be hidden.');
+      if (hide) await setDoc(doc(db, 'hidden', room), { by: this.uid, name: String(this.state.me?.name || '').slice(0, 30), ts: serverTimestamp() });
+      else await deleteDoc(doc(db, 'hidden', room));
+      await this.log(hide ? 'room_hide' : 'room_show', null, `[${roomPlatform(room)}] ` + String(title || room).slice(0, 60));
     },
     // Delete a private chat for me: it disappears from my list and its messages are hidden for me.
     // The other player keeps it. A new message brings the chat back, with only the new messages.

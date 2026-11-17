@@ -41,8 +41,14 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
   const closed = group ? st.closed?.[room] : null;
   const locked = !!closed && !admin;
   const muted = isMuted(st.me) || locked;
+  // Fixed chats staff can hide for players (General always stays; chat rooms staff made can be deleted instead).
+  const hideable = ['tournament', 'premier', 'raffle'].includes(room.split(':')[0]);
+  const hidden = hideable && !!st.hidden?.[room];
+  const [staffMenu, setStaffMenu] = useState(false);
   const toggleClose = () => chat.request('room.close', { room, close: !closed, title })
     .then(() => toast(closed ? 'Chat open again. Everyone can write. 🔓' : 'Chat closed. Players can read it but not write. 🔒')).catch(showError);
+  const toggleHide = () => chat.request('room.hide', { room, hide: !hidden, title })
+    .then(() => toast(hidden ? 'Players see this chat again. 👁' : 'Chat hidden. Only staff see it now. 🙈')).catch(showError);
 
   useEffect(() => {
     chat.activeRoom = room;
@@ -133,10 +139,9 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <TouchableOpacity onPress={() => { setSearchOn(!searchOn); setQ(''); }} hitSlop={8} accessibilityLabel="Search in this chat">
             <Text style={{ fontSize: 18, color: C.white }}>🔍</Text></TouchableOpacity>
-          {group && admin && <TouchableOpacity onPress={toggleClose} hitSlop={8}
-            accessibilityLabel={closed ? 'Open this chat again' : 'Close this chat'}>
-            <View style={[styles.lockBtn, closed && { backgroundColor: C.bad, borderColor: C.bad }]}>
-              <Text style={styles.lockTxt}>{closed ? '🔒 Closed' : '🔓 Close'}</Text></View></TouchableOpacity>}
+          {group && admin && <TouchableOpacity onPress={() => setStaffMenu(true)} hitSlop={8} accessibilityLabel="Close or hide this chat">
+            <View style={[styles.lockBtn, (closed || hidden) && { backgroundColor: C.bad, borderColor: C.bad }]}>
+              <Text style={styles.lockTxt}>{hidden ? '🙈 Hidden' : closed ? '🔒 Closed' : '🔧 Chat'}</Text></View></TouchableOpacity>}
           {right}
         </View>} />
       {below}
@@ -153,7 +158,8 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
           ListEmptyComponent={<View style={{ transform: [{ scaleY: -1 }] }}><Empty text="No messages yet. Say hi 👋" /></View>}
         />}
       <View style={styles.composer}>
-        {closed && <Notice text={admin ? '🔒 You closed this chat (or another staff member did). Players can only read it. Tap "🔒 Closed" at the top to open it again.'
+        {hidden && admin && <Notice text={'🙈 This chat is hidden: players do not see it. Tap "🙈 Hidden" at the top to show it again.'} />}
+        {closed && <Notice text={admin ? '🔒 This chat is closed: players can only read it. Tap the button at the top to open it again.'
           : '🔒 This chat is closed by staff. You can still read it.'} />}
         {muted && !locked && <Notice text={`You are muted until ${clock(st.me.sanction.muted_until)}. You can still read the chat.`} />}
         {reply && <View style={styles.replyBar}>
@@ -190,6 +196,16 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
         onDelete={() => { del(menu); setMenu(null); }}
         onReport={menu && menu.user.id !== st.me?.id ? () => { setReport({ user: menu.user, room, message: menu }); setMenu(null); } : null}
         onPin={admin && group ? () => { chat.request('pin.set', { room, message: menu }).then(() => toast('Pinned at the top. 📌')).catch(showError); setMenu(null); } : null} />
+      {staffMenu && <Modal visible transparent animationType="fade" onRequestClose={() => setStaffMenu(false)}>
+        <Pressable style={styles.scrim} onPress={() => setStaffMenu(false)}>
+          <Pressable style={styles.menu} onPress={() => {}}>
+            <Text style={styles.menuWho} numberOfLines={1}>{title} · staff</Text>
+            <MenuItem label={closed ? '🔓  Open the chat again' : '🔒  Close the chat (players can only read)'} onPress={() => { setStaffMenu(false); toggleClose(); }} />
+            {hideable && <MenuItem label={hidden ? '👁  Show the chat to players again' : '🙈  Hide the chat for players'} onPress={() => { setStaffMenu(false); toggleHide(); }} />}
+            <MenuItem label="Cancel" onPress={() => setStaffMenu(false)} />
+          </Pressable>
+        </Pressable>
+      </Modal>}
       <PollComposer visible={pollOpen} room={room} onClose={() => setPollOpen(false)} />
       {canPlan && <PlanComposer visible={planOpen} room={room} other={other} fixture={planFixture} onClose={() => setPlanOpen(false)} />}
       <ReportSheet target={report} onClose={() => setReport(null)} />

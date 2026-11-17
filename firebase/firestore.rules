@@ -20,6 +20,7 @@ rules_version = '2';
 //   prefs/{uid}                          my settings: { hiddenDms: { <room>: <time> } } private chats I deleted (only me)
 //   pins/{room}                          the pinned message of a group chat (staff): text, name, messageId, by, ts
 //   closed/{room}                        a group chat staff closed: by, name, ts. Players can read it but not write; staff still can.
+//   hidden/{room}                        a fixed chat (tournament, premier, raffle) staff hid: by, name, ts. Only staff see it then.
 //   reports/{id}                         a player reports a player or message to staff: by, targetId, reason, status open|handled|dismissed
 //   channels/{id}                        chat rooms staff make: name, desc, emoji, platform (all|dartsmind|scolia),
 //                                        access open|request|invite, by, ts, members { <uid>: {name, s: member|pending|invited|removed} }
@@ -119,6 +120,10 @@ service cloud.firestore {
       return (kind != 'raffle' || raffleApproved()) && (kind != 'premier' || premierMember())
         && (kind != 'ch' || channelMember(room.split(':')[1]));
     }
+    // A fixed chat staff hid (hidden/{room}): only staff can still open it.
+    function notHidden(room) {
+      return room.split(':')[0] in ['general', 'dm', 'ch'] || isAdmin() || !exists(/databases/$(database)/documents/hidden/$(room));
+    }
     // A player changes only their own place in a chat room:
     // join an open room, ask to join a room "on request", accept an invitation, or leave / decline / cancel.
     // Someone staff removed (s == 'removed') cannot come back by themselves.
@@ -158,8 +163,8 @@ service cloud.firestore {
 
     // ---------- messages ----------
     match /rooms/{room}/messages/{id} {
-      allow read: if canRead() && roomOk(room) && roomAccess(room);
-      allow create: if canPost() && roomOk(room) && roomAccess(room) && !blockedByOther(room)
+      allow read: if canRead() && roomOk(room) && roomAccess(room) && notHidden(room);
+      allow create: if canPost() && roomOk(room) && roomAccess(room) && !blockedByOther(room) && notHidden(room)
         // A chat room staff closed: only staff can still write in it.
         && (isAdmin() || !exists(/databases/$(database)/documents/closed/$(room)))
         && request.resource.data.keys().hasOnly(['uid', 'name', 'role', 'avatar', 'text', 'imageUrl', 'mentions', 'tournament', 'reply', 'poll', 'plan', 'ts'])
@@ -218,6 +223,16 @@ service cloud.firestore {
     match /closed/{room} {
       allow read: if canRead() && roomOk(room) && roomAccess(room);
       allow create, update: if isAdmin() && roomOk(room) && room.split(':')[0] != 'dm'
+        && request.resource.data.keys().hasOnly(['by', 'name', 'ts'])
+        && request.resource.data.by == me() && request.resource.data.ts == request.time
+        && request.resource.data.name is string && request.resource.data.name.size() <= 30;
+      allow delete: if isAdmin();
+    }
+
+    // ---------- a hidden fixed chat (staff): the tab is gone for players, staff still see it ----------
+    match /hidden/{room} {
+      allow read: if canRead();
+      allow create, update: if isAdmin() && roomOk(room) && room.split(':')[0] in ['tournament', 'premier', 'raffle']
         && request.resource.data.keys().hasOnly(['by', 'name', 'ts'])
         && request.resource.data.by == me() && request.resource.data.ts == request.time
         && request.resource.data.name is string && request.resource.data.name.size() <= 30;
