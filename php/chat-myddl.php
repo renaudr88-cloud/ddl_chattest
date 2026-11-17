@@ -240,6 +240,8 @@ function myddl_finish(): void {
         if (!is_array($j) && ($at = strpos($out, '{"ok"')) !== false) $j = json_decode(trim(substr($out, $at)), true);
         if (!is_array($j) && stripos($loc, 'login') !== false) $j = ['ok' => false, 'message' => 'The website asked to log in. Log out of the chat and in again, then try again.'];
         if (!is_array($j)) error_log('chat-myddl ' . $phase . ': no JSON from the website: ' . mb_substr($out, 0, 300));
+        // Remember what was read, for the result that follows in a later request (see myddl_shot_save()).
+        if ($phase === 'shot' && is_array($j) && !empty($j['ok']) && !empty($j['names_matched'])) myddl_shot_save((int)($MYDDL['match'] ?? 0), $uid, $j);
         $res = is_array($j) ? [200, $j] : [500, ['ok' => false, 'message' => "Couldn't read that screenshot. Try again."]];
     } elseif ($phase === 'result') {
         $mid = (int)($MYDDL['match'] ?? 0);
@@ -262,6 +264,48 @@ function myddl_finish(): void {
     header('Cache-Control: no-store');
     echo json_encode($res[1], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
+// The screenshot values, kept in the database between "read the screenshot" and "save the result" (two requests).
+// Only what the website's screenshot reader returned is stored, never what the app sends.
+function myddl_shot_table(): bool {
+    global $pdo;
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS chat_match_shots (
+            match_id INT NOT NULL, player_id INT NOT NULL, vals TEXT NOT NULL, read_at INT NOT NULL,
+            PRIMARY KEY (match_id, player_id))");
+        return true;
+    } catch (Throwable $e) { error_log('chat_match_shots: ' . $e->getMessage()); return false; }
+}
+function myddl_shot_save(int $matchId, int $uid, array $j): void {
+    global $pdo;
+    if ($matchId <= 0 || !myddl_shot_table()) return;
+    $a = $j['player1'] ?? []; $b = $j['player2'] ?? [];
+    $vals = [
+        'score1' => (int)($a['legs'] ?? 0), 'score2' => (int)($b['legs'] ?? 0),
+        'p1_avg' => (float)($a['avg'] ?? 0), 'p2_avg' => (float)($b['avg'] ?? 0),
+        'p1_100s' => (int)($a['c100'] ?? 0), 'p2_100s' => (int)($b['c100'] ?? 0),
+        'p1_140s' => (int)($a['c140'] ?? 0), 'p2_140s' => (int)($b['c140'] ?? 0),
+        'p1_180s' => (int)($a['c180'] ?? 0), 'p2_180s' => (int)($b['c180'] ?? 0),
+        'p1_checkout' => isset($a['checkout']) ? (int)$a['checkout'] : null, 'p2_checkout' => isset($b['checkout']) ? (int)$b['checkout'] : null,
+    ];
+    try {
+        $pdo->prepare('DELETE FROM chat_match_shots WHERE match_id = ? AND player_id = ?')->execute([$matchId, $uid]);
+        $pdo->prepare('INSERT INTO chat_match_shots (match_id, player_id, vals, read_at) VALUES (?, ?, ?, ?)')
+            ->execute([$matchId, $uid, json_encode($vals), time()]);
+    } catch (Throwable $e) { error_log('chat_match_shots save: ' . $e->getMessage()); }
+}
+function myddl_shot_load(int $matchId, int $uid): ?array {
+    global $pdo;
+    if (!myddl_shot_table()) return null;
+    try {
+        $st = $pdo->prepare('SELECT vals, read_at FROM chat_match_shots WHERE match_id = ? AND player_id = ?');
+        $st->execute([$matchId, $uid]);
+        $r = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$r || (int)$r['read_at'] < time() - 3 * 3600) return null;
+        $v = json_decode((string)$r['vals'], true);
+        return is_array($v) ? ['at' => (int)$r['read_at'], 'vals' => $v] : null;
+    } catch (Throwable $e) { return null; }
+}
+
 register_shutdown_function('myddl_finish');
 
 // Errors from here on: end the session and answer.
@@ -302,8 +346,13 @@ if ($MYDDL['action'] === 'shot' || $MYDDL['action'] === 'result') {
     $match = $m->fetch(PDO::FETCH_ASSOC);
     if (!$match || !in_array($MYDDL['uid'], [(int)$match['player1_id'], (int)$match['player2_id']], true)) chat_json(404, ['error' => 'That match was not found.']);
     if (!empty($match['winner_id'])) chat_json(400, ['error' => 'This match already has a result. Changes: ask an admin.']);
-    myddl_as_player($MYDDL['uid'], true);
+    myddl_as_player($MYDDL['uid']);
     $_SERVER['REQUEST_METHOD'] = 'POST';
+    if ($MYDDL['action'] === 'result' && ($shot = myddl_shot_load($MYDDL['match'], $MYDDL['uid']))) {
+        // Exactly what parse-match-screenshot.php would have left in a website session.
+        $_SESSION['ddl_match_shot'][$MYDDL['match']] = $shot['at'];
+        $_SESSION['ddl_match_shot_vals'][$MYDDL['match']] = $shot['vals'];
+    }
     if ($MYDDL['action'] === 'shot') {
         if (!$isMultipart || empty($_FILES['screenshot'])) myddl_fail(400, 'Choose a screenshot first.');
         $_POST = ['match_id' => (string)$MYDDL['match'], 'source' => 'tournament'];
