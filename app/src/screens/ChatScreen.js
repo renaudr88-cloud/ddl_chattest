@@ -191,7 +191,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
           {CAN_UPLOAD && <TouchableOpacity style={styles.icon} onPress={pick} disabled={muted} accessibilityLabel="Add a picture"><Text style={{ fontSize: 20 }}>📷</Text></TouchableOpacity>}
           {canPlan && <TouchableOpacity style={styles.icon} onPress={() => { setPlanFixture(null); setPlanOpen(true); }} disabled={muted} accessibilityLabel="Plan a league match"><Text style={{ fontSize: 20 }}>📅</Text></TouchableOpacity>}
           {group && admin && <TouchableOpacity style={styles.icon} onPress={() => setPollOpen(true)} disabled={muted} accessibilityLabel="New poll"><Text style={{ fontSize: 20 }}>📊</Text></TouchableOpacity>}
-          <TextInput style={styles.input} value={text} onChangeText={onType} multiline maxLength={1000} editable={!muted}
+          <TextInput style={styles.input} value={text} onChangeText={onType} multiline numberOfLines={1} maxLength={1000} editable={!muted}
             placeholder={locked ? '🔒 Closed by staff' : room.startsWith('dm:') ? 'Message' : 'Message · @ to tag'} placeholderTextColor={C.muted} />
           <TouchableOpacity style={[styles.send, (muted || sending) && { opacity: 0.45 }]} onPress={send} disabled={muted || sending} accessibilityLabel="Send">
             {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendTxt}>➤</Text>}

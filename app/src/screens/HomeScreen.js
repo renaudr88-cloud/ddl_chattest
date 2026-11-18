@@ -1,6 +1,6 @@
 // Main shell: bottom tabs + private chat overlay + member sheet. No navigation library needed.
 import { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, Modal, Pressable, Linking, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, Modal, Pressable, Linking, Platform, useWindowDimensions } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { chat, useChat, listHere, RAFFLE_PLATFORM, mentionCount, newMatches, visibleDms } from '../chat';
 import { BlockedList } from './Report';
@@ -124,6 +124,9 @@ export default function HomeScreen() {
     </View>
   );
 
+  // A phone turned sideways (landscape): little height, so the install and notification bars stay away.
+  const { width: winW, height: winH } = useWindowDimensions();
+  const flat = winW > winH && winH < 600;
   let body;
   // An open chat fills the screen (like WhatsApp): no platform switch, install bar or bottom tabs; ‹ goes back.
   let fullChat = !!dm;
@@ -197,8 +200,8 @@ export default function HomeScreen() {
           })}
         </View>
       )}
-      {!fullChat && !admin && <InstallBar onOpen={() => setInstall(true)} />}
-      {!fullChat && !admin && <PushBar me={st.me} />}
+      {!fullChat && !admin && !flat && <InstallBar onOpen={() => setInstall(true)} />}
+      {!fullChat && !admin && !flat && <PushBar me={st.me} />}
       {!fullChat && !admin && isAdmin && st.reports?.length > 0 && (
         <TouchableOpacity style={styles.reportBar} onPress={() => setAdmin('reports')} accessibilityRole="button">
           <Text style={styles.reportTxt}>🚩 {st.reports.length} report{st.reports.length === 1 ? '' : 's'} from players waiting</Text>
