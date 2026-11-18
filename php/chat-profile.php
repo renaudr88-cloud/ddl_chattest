@@ -2,7 +2,9 @@
 // The player card in DDL Chat: a player's numbers from ddl-online.com (read only).
 // GET /chat-profile.php?id=12   (header Authorization: Bearer <token from chat-login.php>)
 // -> {"profile": {id, name, dartsmind, country, countryName, hometown, average, ranks:[{label,pos}], bestCheckout,
-//                 league:{name, group, season, pos, size, pts, diff}|null, form:["W","L",...], badges:[{name, img}], profileUrl}}
+//                 league:{name, group, season, pos, size, pts, diff}|null, form:["W","L",...], badges:[{name, img}], profileUrl,
+//                 career:{matches, wins, winPct, streak, s100, s140, s180}|null,
+//                 rivals:{nemesis:{id,name,w,l}|null, mostWins:{...}|null}|null, about:{darts?, walkout?, favourite?, since?}}}
 // Every part is optional: when one query fails (different table on the site), the rest still comes back.
 require __DIR__ . '/chat-config.php';
 require_once __DIR__ . '/chat-names.php';
@@ -111,6 +113,87 @@ try {
     $q->execute(['pid' => $id]);
     $out['form'] = array_reverse(array_map(fn($r) => (int)$r['won'] === 1 ? 'W' : 'L', $q->fetchAll(PDO::FETCH_ASSOC)));
 } catch (Throwable $e) {}
+
+// Career numbers, counted the same way as player-card.php on the website:
+// matches, wins and streak over tournaments + group knockouts; 100s/140s/180s over tournaments + leagues.
+$out['career'] = null;
+$out['rivals'] = null;
+try {
+    $rows = [];
+    foreach ([
+        "SELECT player1_id AS p1, player2_id AS p2, score1 AS s1, score2 AS s2, created_at AS t FROM matches
+         WHERE (player1_id = :pid OR player2_id = :pid) AND score1 IS NOT NULL AND score2 IS NOT NULL",
+        "SELECT player1_id AS p1, player2_id AS p2, player1_score AS s1, player2_score AS s2, created_at AS t FROM group_knockout_group_matches
+         WHERE (player1_id = :pid OR player2_id = :pid) AND player1_score IS NOT NULL AND player2_score IS NOT NULL",
+        "SELECT player1_id AS p1, player2_id AS p2, score1 AS s1, score2 AS s2, created_at AS t FROM group_knockout_bracket_matches
+         WHERE (player1_id = :pid OR player2_id = :pid) AND score1 IS NOT NULL AND score2 IS NOT NULL",
+    ] as $sql) {
+        try { $q = $db->prepare($sql); $q->execute(['pid' => $id]); $rows = array_merge($rows, $q->fetchAll(PDO::FETCH_ASSOC)); } catch (Throwable $e) {}
+    }
+    usort($rows, fn($x, $y) => strcmp((string)$x['t'], (string)$y['t']));
+    $played = 0; $won = 0; $run = 0; $streak = 0; $h2h = [];
+    foreach ($rows as $m) {
+        $mine = (int)$m['p1'] === $id;
+        $a = (int)($mine ? $m['s1'] : $m['s2']); $b = (int)($mine ? $m['s2'] : $m['s1']);
+        $opp = (int)($mine ? $m['p2'] : $m['p1']);
+        $played++;
+        if ($a > $b) { $won++; $run++; $streak = max($streak, $run); } else { $run = 0; }
+        if ($opp > 0) {
+            $h2h[$opp] ??= ['w' => 0, 'l' => 0];
+            if ($a > $b) $h2h[$opp]['w']++; elseif ($a < $b) $h2h[$opp]['l']++;
+        }
+    }
+    $sum = ['s100' => 0, 's140' => 0, 's180' => 0];
+    foreach ([
+        "SELECT SUM(CASE WHEN player1_id = :pid THEN p1_100s ELSE p2_100s END), SUM(CASE WHEN player1_id = :pid THEN p1_140s ELSE p2_140s END),
+                SUM(CASE WHEN player1_id = :pid THEN p1_180s ELSE p2_180s END) FROM matches WHERE player1_id = :pid OR player2_id = :pid",
+        "SELECT SUM(CASE WHEN player1_id = :pid THEN p1_100s ELSE p2_100s END), SUM(CASE WHEN player1_id = :pid THEN p1_140s ELSE p2_140s END),
+                SUM(CASE WHEN player1_id = :pid THEN p1_180s ELSE p2_180s END) FROM group_knockout_group_matches
+         WHERE (player1_id = :pid OR player2_id = :pid) AND player1_score IS NOT NULL AND player2_score IS NOT NULL",
+        "SELECT SUM(CASE WHEN player1_id = :pid THEN p1_100s ELSE p2_100s END), SUM(CASE WHEN player1_id = :pid THEN p1_140s ELSE p2_140s END),
+                SUM(CASE WHEN player1_id = :pid THEN p1_180s ELSE p2_180s END) FROM group_knockout_bracket_matches
+         WHERE (player1_id = :pid OR player2_id = :pid) AND score1 IS NOT NULL AND score2 IS NOT NULL",
+        "SELECT SUM(CASE WHEN player1_id = :pid THEN p1_100_plus ELSE p2_100_plus END), SUM(CASE WHEN player1_id = :pid THEN p1_140_plus ELSE p2_140_plus END),
+                SUM(CASE WHEN player1_id = :pid THEN p1_180s ELSE p2_180s END) FROM league_group_matches
+         WHERE (player1_id = :pid OR player2_id = :pid) AND player1_score IS NOT NULL AND player2_score IS NOT NULL",
+    ] as $sql) {
+        try {
+            $s = $db->prepare($sql); $s->execute(['pid' => $id]); $r = $s->fetch(PDO::FETCH_NUM);
+            if ($r) { $sum['s100'] += (int)$r[0]; $sum['s140'] += (int)$r[1]; $sum['s180'] += (int)$r[2]; }
+        } catch (Throwable $e) {}
+    }
+    if ($played > 0 || $sum['s180'] + $sum['s140'] + $sum['s100'] > 0) {
+        $out['career'] = ['matches' => $played, 'wins' => $won, 'winPct' => $played ? (int)round($won * 100 / $played) : null,
+            'streak' => $streak] + $sum;
+    }
+    // Rivals: the player who beat them most (nemesis) and the one they beat most
+    $pick = function (string $k) use ($h2h) {
+        $best = null;
+        foreach ($h2h as $opp => $r) if ($r[$k] > 0 && (!$best || $r[$k] > $h2h[$best][$k])) $best = $opp;
+        return $best;
+    };
+    $nem = $pick('l'); $vic = $pick('w');
+    if ($nem || $vic) {
+        $ids = array_values(array_filter([$nem, $vic]));
+        $s = $db->prepare('SELECT id, name, dartsmind_username FROM players WHERE id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')');
+        $s->execute($ids);
+        $names = [];
+        foreach ($s->fetchAll(PDO::FETCH_ASSOC) as $r) $names[(int)$r['id']] = chat_display_name($r);
+        $who = fn($o) => $o && isset($names[$o]) ? ['id' => 'ddl-' . $o, 'name' => $names[$o], 'w' => $h2h[$o]['w'], 'l' => $h2h[$o]['l']] : null;
+        $out['rivals'] = ['nemesis' => $who($nem), 'mostWins' => $who($vic)];
+    }
+} catch (Throwable $e) {}
+
+// About the player (filled in on their website profile)
+$txt = fn($k) => ($v = trim((string)($p[$k] ?? ''))) !== '' ? mb_substr($v, 0, 60) : null;
+$weight = $txt('darts_weight');
+if ($weight !== null && is_numeric($weight)) $weight .= 'g';
+$out['about'] = array_filter([
+    'darts' => trim(implode(' ', array_filter([$txt('darts_brand'), $weight]))) ?: null,
+    'walkout' => $txt('walkout_song'),
+    'favourite' => $txt('favourite_player'),
+    'since' => !empty($p['created_at']) && strtotime((string)$p['created_at']) ? date('M Y', strtotime((string)$p['created_at'])) : null,
+]);
 
 // Badges: highest tier per badge, like the profile page
 try {

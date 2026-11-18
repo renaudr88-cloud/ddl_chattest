@@ -190,6 +190,8 @@ function PlayerStats({ card }) {
     card.bestCheckout && [String(card.bestCheckout), 'Best CO'],
   ].filter(Boolean).slice(0, 4);
   const lg = card.league;
+  const c = card.career, rv = card.rivals, a = card.about || {};
+  const about = [['🎯 Darts', a.darts], ['🎵 Walk-on', a.walkout], ['⭐ Favourite player', a.favourite], ['📅 Member since', a.since]].filter(x => x[1]);
   return <>
     {tiles.length > 0 && (
       <View style={styles.tiles}>
@@ -206,6 +208,24 @@ function PlayerStats({ card }) {
           </Text>
         </View>
         {lg.pos != null && <View style={{ alignItems: 'flex-end' }}><Text style={styles.leaguePos}>{ordinal(lg.pos)}</Text><Text style={styles.leagueSub}>of {lg.size}</Text></View>}
+      </View>)}
+    {!!c && (
+      <View style={styles.career}>
+        <Text style={[styles.section, { marginTop: 0 }]}>Career · DDL matches</Text>
+        <View style={styles.tiles}>
+          {[[c.matches, 'Matches'], [c.winPct != null ? c.winPct + '%' : '–', 'Win %'], [c.s180, '180s'], [c.streak, 'Best streak']].map(([v, l]) => (
+            <View key={l} style={styles.tileSm}><Text style={styles.tileSmVal}>{v}</Text><Text style={styles.tileLbl}>{l}</Text></View>))}
+        </View>
+        <Text style={styles.leagueSub}>{c.wins} won · {c.matches - c.wins} lost · {c.s140} × 140+ · {c.s100} × 100+</Text>
+      </View>)}
+    {!!(rv?.nemesis || rv?.mostWins) && (
+      <View style={styles.career}>
+        {!!rv.nemesis && <Text style={styles.aboutLine}><Text style={styles.aboutKey}>😈 Nemesis  </Text>{rv.nemesis.name} ({rv.nemesis.w}-{rv.nemesis.l})</Text>}
+        {!!rv.mostWins && <Text style={styles.aboutLine}><Text style={styles.aboutKey}>💪 Most wins vs  </Text>{rv.mostWins.name} ({rv.mostWins.w}-{rv.mostWins.l})</Text>}
+      </View>)}
+    {about.length > 0 && (
+      <View style={styles.career}>
+        {about.map(([k, v]) => <Text key={k} style={styles.aboutLine} numberOfLines={2}><Text style={styles.aboutKey}>{k}  </Text>{v}</Text>)}
       </View>)}
     {card.form.length > 0 && (
       <View style={styles.lineRow}>
@@ -243,6 +263,11 @@ const styles = themed(C => ({
   leagueName: { color: C.fg, fontSize: 14, fontWeight: '800' },
   leagueSub: { color: C.muted, fontSize: 12 },
   leaguePos: { color: C.orange, fontSize: 22, fontWeight: '900' },
+  career: { backgroundColor: C.bg, borderWidth: 1, borderColor: C.line, borderRadius: 12, padding: 11, gap: 8 },
+  tileSm: { flex: 1, alignItems: 'center' },
+  tileSmVal: { color: C.fg, fontSize: 19, fontWeight: '900' },
+  aboutLine: { color: C.fg, fontSize: 14 },
+  aboutKey: { color: C.muted, fontWeight: '800' },
   lineRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   form: { width: 21, height: 21, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
   formTxt: { color: '#fff', fontSize: 10, fontWeight: '900' },
