@@ -13,7 +13,7 @@ import { TournamentCard } from './Tournaments';
 import { PollComposer, PollCard, PinBar, SearchBar } from './Extras';
 import { PlanComposer, PlanCard } from './Planner';
 
-export default function ChatScreen({ room, title, subtitle, onBack, onUser, right, below, other, initialPlan }) {
+export default function ChatScreen({ room, title, subtitle, onBack, onUser, right, below, other, initialPlan, channel, onChannelDeleted }) {
   const st = useChat();
   const theme = useTheme();
   const [text, setText] = useState('');
@@ -45,6 +45,10 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
   const hideable = ['tournament', 'premier', 'raffle'].includes(room.split(':')[0]);
   const hidden = hideable && !!st.hidden?.[room];
   const [staffMenu, setStaffMenu] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+  // Staff: delete a chat room made by staff (all its members lose it).
+  const deleteRoom = () => chat.request('channel.delete', { id: channel.id })
+    .then(() => { toast(`${channel.name} is deleted.`); onChannelDeleted?.(); }).catch(showError);
   const toggleClose = () => chat.request('room.close', { room, close: !closed, title })
     .then(() => toast(closed ? 'Chat open again. Everyone can write. 🔓' : 'Chat closed. Players can read it but not write. 🔒')).catch(showError);
   const toggleHide = () => chat.request('room.hide', { room, hide: !hidden, title })
@@ -197,12 +201,15 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
         onReport={menu && menu.user.id !== st.me?.id ? () => { setReport({ user: menu.user, room, message: menu }); setMenu(null); } : null}
         onPin={admin && group ? () => { chat.request('pin.set', { room, message: menu }).then(() => toast('Pinned at the top. 📌')).catch(showError); setMenu(null); } : null} />
       {staffMenu && <Modal visible transparent animationType="fade" onRequestClose={() => setStaffMenu(false)}>
-        <Pressable style={styles.scrim} onPress={() => setStaffMenu(false)}>
+        <Pressable style={styles.scrim} onPress={() => { setStaffMenu(false); setConfirmDel(false); }}>
           <Pressable style={styles.menu} onPress={() => {}}>
             <Text style={styles.menuWho} numberOfLines={1}>{title} · staff</Text>
             <MenuItem label={closed ? '🔓  Open the chat again' : '🔒  Close the chat (players can only read)'} onPress={() => { setStaffMenu(false); toggleClose(); }} />
             {hideable && <MenuItem label={hidden ? '👁  Show the chat to players again' : '🙈  Hide the chat for players'} onPress={() => { setStaffMenu(false); toggleHide(); }} />}
-            <MenuItem label="Cancel" onPress={() => setStaffMenu(false)} />
+            {!!channel && (confirmDel
+              ? <MenuItem label={`🗑  Yes, delete ${channel.name} for everyone`} danger onPress={() => { setStaffMenu(false); setConfirmDel(false); deleteRoom(); }} />
+              : <MenuItem label="🗑  Delete this chat room" danger onPress={() => setConfirmDel(true)} />)}
+            <MenuItem label="Cancel" onPress={() => { setStaffMenu(false); setConfirmDel(false); }} />
           </Pressable>
         </Pressable>
       </Modal>}

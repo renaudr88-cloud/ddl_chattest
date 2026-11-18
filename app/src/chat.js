@@ -345,35 +345,8 @@ class ChatClient {
       }, onErr));
     }
 
-    // Premier League chat (Dartsmind): only players staff put in it, and staff. Invisible for everyone else.
-    this.sub('premierMine', onSnapshot(doc(db, 'premierMembers', this.uid), s => {
-      const member = s.exists();
-      if (this.premierWas === false && member) toast('You were added to the Premier League chat. 🏅');
-      this.premierWas = member;
-      this.set(st => ({ premier: { ...st.premier, member } }));
-      if (member || this.role === 'admin') this.watchRoom(PREMIER_ROOM);
-      else { this.subs.get('room:' + PREMIER_ROOM)?.(); this.subs.delete('room:' + PREMIER_ROOM); this.set(st => { const rooms = { ...st.rooms }; delete rooms[PREMIER_ROOM]; return { rooms }; }); }
-    }, onErr));
-    if (this.role === 'admin') {
-      this.sub('premierAll', onSnapshot(query(collection(db, 'premierMembers'), limit(300)), s => {
-        const members = s.docs.map(d => ({ id: d.id, name: d.data().name })).sort((a, b) => a.name.localeCompare(b.name));
-        this.set(st => ({ premier: { ...st.premier, members } }));
-      }, onErr));
-    }
-
-    // Raffle chat (Dartsmind only): players need staff approval. Staff see every request.
-    this.sub('raffleMine', onSnapshot(doc(db, 'raffleAccess', this.uid), s => {
-      const status = s.exists() ? s.data().status : null;
-      this.set(st => ({ raffle: { ...st.raffle, status } }));
-      if (status === 'approved' || this.role === 'admin') this.watchRoom(RAFFLE_ROOM);
-      else { this.subs.get('room:' + RAFFLE_ROOM)?.(); this.subs.delete('room:' + RAFFLE_ROOM); }
-    }, onErr));
-    if (this.role === 'admin') {
-      this.sub('raffleAll', onSnapshot(query(collection(db, 'raffleAccess'), orderBy('ts', 'desc'), limit(200)), s => {
-        const requests = s.docs.map(d => { const x = d.data({ serverTimestamps: 'estimate' }); return { id: d.id, name: x.name, status: x.status, ts: ms(x.ts) }; });
-        this.set(st => ({ raffle: { ...st.raffle, requests } }));
-      }, onErr));
-    }
+    // The Premier League and Raffles chats are no longer in the app (staff use chat rooms for them):
+    // their access lists and messages are not followed any more, which also saves database reads.
 
     // Fixed chats staff hid (hidden/{room}): a handful of small documents.
     this.sub('hidden', onSnapshot(query(collection(db, 'hidden'), limit(20)), s => {

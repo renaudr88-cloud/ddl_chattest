@@ -12,7 +12,7 @@ export const welcomeSeen = () => AsyncStorage.getItem(KEY).then(v => !!v).catch(
 const STEPS = [
   { icon: '👋', title: 'Welcome to DDL Chat', lines: [
     ['🎯', 'Dartsmind and Scolia each have their own chats. Switch at the top.'],
-    ['💬', 'General chat for everyone, Tournament chat for match day. Premier League and Raffles for the players who are in them.'],
+    ['💬', 'Chat shows all your chats in one list: General for everyone, Tournament for match day, and your chat rooms. Tap one to open it.'],
     ['🙂', 'Keep it friendly: bad words are blocked and staff can mute, kick or ban.'],
   ] },
   { icon: '🏆', title: 'My DDL: tournaments', lines: [
@@ -27,7 +27,7 @@ const STEPS = [
     ['📅', 'In that private chat tap 📅 to suggest a day and time. Your opponent accepts, and you both get a reminder 1 hour before.'],
   ] },
   { icon: '👥', title: 'Chat rooms', lines: [
-    ['＋', 'Chat → ＋ Rooms (at the end of the row): chat rooms made by DDL staff.'],
+    ['＋', 'Chat → ＋ Discover chat rooms (at the bottom of the list): chat rooms made by DDL staff.'],
     ['🌐', 'Open rooms: tap Join. "On request": tap Ask to join and staff let you in.'],
     ['✉️', 'Invited to a room? You see it there: tap Accept.'],
   ] },

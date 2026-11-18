@@ -7,9 +7,7 @@ import { BlockedList } from './Report';
 import { InstallBar, InstallGuide } from './Install';
 import { PLATFORMS, platformInfo } from '../platforms';
 import { Btn, Header, clock, showError, toast, PlatformLogo, RoomPicker, DartsmindName } from '../components';
-import { RaffleGate, RaffleStaffBar } from './Raffle';
 import { OpenTournaments } from './Tournaments';
-import { PremierStaffBar } from './Premier';
 import { C, themed, useTheme, setTheme, THEMES, PALETTES } from '../theme';
 import ChatScreen from './ChatScreen';
 import MessagesScreen from './MessagesScreen';
@@ -20,6 +18,7 @@ import MemberSheet from './MemberSheet';
 import Welcome, { welcomeSeen } from './Welcome';
 import MyDDLScreen from './MyDDLScreen';
 import ChannelsScreen, { ChannelBar, channelsHere } from './Channels';
+import ChatList from './ChatList';
 import { soundOn, setSound } from '../sound';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { pushStatus, pushOn, pushOff, pushBoot } from '../push';
@@ -35,8 +34,7 @@ const TABS = [
 export default function HomeScreen() {
   const st = useChat();
   const [tab, setTab] = useState('chat');
-  const [room, setRoom] = useState('general');  // chat tab: general | tournament | premier | raffle | ch:<id> (a chat room) | rooms (the list)
-  const [roomsOpen, setRoomsOpen] = useState(false); // the "Rooms" sheet: raffles and my chat rooms
+  const [room, setRoom] = useState('list');     // chat tab: list (all chats) | general | tournament | ch:<id> (a chat room) | rooms (find rooms)
   const [dm, setDm] = useState(null);          // {room, other}
   const [admin, setAdmin] = useState(false);
   const [sheet, setSheet] = useState(null);    // user
@@ -132,57 +130,44 @@ export default function HomeScreen() {
     below={dm.room.split(':')[1] === 'dartsmind' && <DartsmindBar other={dm.other} />} />;
   else if (admin) body = <AdminScreen onBack={() => setAdmin(false)} onUser={setSheet} startTab={admin === 'reports' || admin === 'members' ? admin : undefined} />;
   else if (tab === 'chat') {
-    // A fixed chat staff hid: gone for players; staff still see it, marked 🙈.
+    // The Chat tab opens on a list of every chat (like WhatsApp); tap one to open it, ‹ goes back to the list.
+    // Premier League and Raffles chats are no longer shown (staff can make a chat room for them instead).
     const isHidden = k => !!st.hidden?.[`${k}:${st.platform}`];
-    const shown = k => isAdmin || !isHidden(k);
-    const hide = (k, label) => isHidden(k) ? '🙈 ' + label.replace(/^\S+ /, '') : label;
-    const hasRaffle = st.platform === RAFFLE_PLATFORM && shown('raffle');
-    const hasPremier = st.platform === 'dartsmind' && (isAdmin || st.premier?.member) && shown('premier');
-    const hasTournament = shown('tournament');
-    // Chat rooms staff made: mine are tabs next to General / Tournament; "＋ Rooms" lists them all.
+    const hide = (k, label) => isHidden(k) ? '🙈 ' + label : label;
+    const hasTournament = isAdmin || !isHidden('tournament');
     const chans = channelsHere(st);
     const myChans = chans.filter(c => c.my === 'member');
     const chan = room.startsWith('ch:') ? chans.find(c => 'ch:' + c.id === room && (c.my === 'member' || isAdmin)) : null;
-    const r = (room === 'raffle' && !hasRaffle) || (room === 'premier' && !hasPremier) || (room === 'tournament' && !hasTournament) || (room.startsWith('ch:') && !chan) ? 'general' : room;
+    const known = room === 'list' || room === 'rooms' || room === 'general' || (room === 'tournament' && hasTournament) || !!chan;
+    const r = known ? room : 'list';
     const roomsBadge = chans.filter(c => c.my === 'invited').length + (isAdmin ? chans.reduce((n, c) => n + c.members.filter(m => m.s === 'pending').length, 0) : 0);
-    const pendingRaffle = isAdmin ? (st.raffle?.requests || []).filter(x => x.status === 'pending').length : 0;
-    const tags = k => mentionCount(st, `${k}:${st.platform}`) + (k === 'tournament' ? newMatches(st, st.platform) : 0);
-    // Fixed tabs: General, Tournament, Premier. Everything else (raffles, chat rooms) is under "Rooms ▾",
-    // a sheet with the list, so the row never runs off the screen however many rooms there are.
-    const fixed = [['general', 'General', tags('general')],
-      ...(hasTournament ? [['tournament', hide('tournament', 'Tournament'), tags('tournament')]] : []),
-      ...(hasPremier ? [['premier', hide('premier', '🏅 Premier'), tags('premier')]] : [])];
-    const extra = [
-      ...(hasRaffle ? [['raffle', hide('raffle', '🔒 Raffles'), pendingRaffle + tags('raffle'), 'Dartsmind raffles']] : []),
-      ...myChans.map(c => ['ch:' + c.id, `${c.emoji} ${c.name}`, mentionCount(st, 'ch:' + c.id), c.desc || 'Chat room']),
-      ...(chan && chan.my !== 'member' ? [['ch:' + chan.id, `${chan.emoji} ${chan.name}`, 0, 'Staff view']] : [])];
-    const inExtra = r === 'rooms' || extra.some(([k]) => k === r);
-    const extraBadge = extra.reduce((n, x) => n + (x[2] || 0), 0) + roomsBadge;
-    // The room's own name is in the header; the tab stays "Rooms ▾" so it always fits.
-    const rooms = [...fixed, ['more', 'Rooms ▾', extraBadge]];
+    const back = () => setRoom('list');
+    const fixed = [
+      { key: 'general', room: `general:${st.platform}`, label: 'General', icon: '💬', sub: `${here.name} community` },
+      ...(hasTournament ? [{ key: 'tournament', room: `tournament:${st.platform}`, label: hide('tournament', 'Tournament'), icon: '🏆',
+        sub: 'Draws, results, who plays next', badge: newMatches(st, st.platform) }] : []),
+    ];
+    const roomList = [
+      ...myChans.map(c => ({ key: 'ch:' + c.id, room: 'ch:' + c.id, label: c.name, icon: c.emoji || '💬', sub: c.desc || 'Chat room' })),
+      ...(chan && chan.my !== 'member' ? [{ key: 'ch:' + chan.id, room: 'ch:' + chan.id, label: chan.name, icon: chan.emoji || '💬', sub: 'Staff view' }] : []),
+    ];
     const info = {
       general: ['General chat', `${here.name} community. Keep it friendly.`],
       tournament: ['Tournament', `${here.name} tournaments: draws, results, who plays next.`],
-      raffle: ['Raffles', 'Dartsmind raffles, for approved players.'],
-      premier: ['Premier League', 'Premier League players and DDL staff only.'],
       rooms: ['Chat rooms', 'Join a room, or open one of yours.'],
-    }[r] || (chan ? [chan.name, chan.desc || 'Chat room'] : ['Chat', '']);
-    const picker = <>
-      <ChatTabs rooms={rooms} value={inExtra ? 'more' : r} onChange={k => (k === 'more' ? setRoomsOpen(true) : setRoom(k))} />
-      <RoomsSheet open={roomsOpen} onClose={() => setRoomsOpen(false)} rooms={extra} value={r} invites={roomsBadge}
-        onPick={k => { setRoomsOpen(false); setRoom(k); }} />
-    </>;
-    if (r === 'rooms') {
-      body = <ChannelsScreen staff={isAdmin} onOpen={id => setRoom('ch:' + id)} header={<><Header title={info[0]} subtitle={info[1]} right={headerRight} />{picker}</>} />;
+    }[r] || (chan ? [chan.name, chan.desc || 'Chat room'] : ['Chat', `${here.name} community`]);
+    if (r === 'list') {
+      body = <ChatList header={<Header title="Chat" subtitle={`${here.name} community`} right={headerRight} />}
+        fixed={fixed} rooms={roomList} invites={roomsBadge} onOpen={setRoom} onDiscover={() => setRoom('rooms')} />;
+    } else if (r === 'rooms') {
+      body = <ChannelsScreen staff={isAdmin} onOpen={id => setRoom('ch:' + id)} header={<Header title={info[0]} subtitle={info[1]} onBack={back} right={headerRight} />} />;
     } else if (chan) {
-      body = <ChatScreen key={r} room={r} title={info[0]} subtitle={info[1]} onUser={onUser} right={headerRight}
-        below={<>{picker}<ChannelBar c={chan} staff={isAdmin} onLeft={() => setRoom('general')} /></>} />;
-    } else if (r === 'raffle' && !isAdmin && st.raffle?.status !== 'approved') {
-      body = <RaffleGate header={<><Header title={info[0]} subtitle={info[1]} right={headerRight} />{picker}</>} />;
+      body = <ChatScreen key={r} room={r} title={info[0]} subtitle={info[1]} onBack={back} onUser={onUser} right={headerRight}
+        channel={chan} onChannelDeleted={back}
+        below={<ChannelBar c={chan} staff={isAdmin} onLeft={back} />} />;
     } else {
-      body = <ChatScreen key={r + st.platform} room={`${r}:${st.platform}`} title={info[0]} subtitle={info[1]} onUser={onUser} right={headerRight}
-        below={<>{picker}{r === 'raffle' && isAdmin && <RaffleStaffBar />}{r === 'premier' && isAdmin && <PremierStaffBar />}
-          {r === 'tournament' && st.me?.id?.startsWith('ddl-') && <OpenTournaments staff={isAdmin} platform={st.platform} />}
+      body = <ChatScreen key={r + st.platform} room={`${r}:${st.platform}`} title={info[0]} subtitle={info[1]} onBack={back} onUser={onUser} right={headerRight}
+        below={<>{r === 'tournament' && st.me?.id?.startsWith('ddl-') && <OpenTournaments staff={isAdmin} platform={st.platform} />}
           {r === 'tournament' && <MyMatches onOpen={openDM} platform={st.platform} />}</>} />;
     }
   }
@@ -226,7 +211,7 @@ export default function HomeScreen() {
                   + (isAdmin ? c.members.filter(m => m.s === 'pending').length : 0), 0) : 0;
             const on = tab === k;
             return (
-              <TouchableOpacity key={k} style={styles.tab} onPress={() => setTab(k)} accessibilityLabel={label}>
+              <TouchableOpacity key={k} style={styles.tab} onPress={() => { if (k === 'chat' && tab === 'chat' && !dm) setRoom('list'); setTab(k); }} accessibilityLabel={label}>
                 <Text style={[styles.tabIc, on && { color: C.orange }]}>{ic}</Text>
                 <Text style={[styles.tabTxt, on && { color: C.white }]}>{label}</Text>
                 {badge > 0 && <View style={styles.badge}><Text style={styles.badgeTxt}>{badge}</Text></View>}
@@ -408,50 +393,6 @@ function Settings({ visible, theme, me, onClose, onModeration, onHelp, onInstall
   );
 }
 
-// The Chat tab's row: the fixed chats as equal tabs, the last one opens the Rooms sheet.
-function ChatTabs({ rooms, value, onChange }) {
-  return (
-    <View style={styles.chatTabs} accessibilityRole="tablist">
-      {rooms.map(([k, label, badge]) => {
-        const on = value === k;
-        return (
-          <TouchableOpacity key={k} onPress={() => onChange(k)} style={[styles.chatTab, on && styles.chatTabOn]}
-            accessibilityRole="tab" accessibilityState={{ selected: on }} accessibilityLabel={label}>
-            <Text style={[styles.chatTabTxt, on && { color: C.white }, k === 'more' && !on && { color: C.orangeSoft }]} numberOfLines={1}>{label}</Text>
-            {!!badge && <View style={styles.chatTabBadge}><Text style={styles.chatTabBadgeTxt}>{badge}</Text></View>}
-          </TouchableOpacity>);
-      })}
-    </View>
-  );
-}
-
-// "Rooms ▾": raffles and my chat rooms in a list, plus the way to find and join other rooms.
-function RoomsSheet({ open, onClose, rooms, value, invites, onPick }) {
-  if (!open) return null;
-  return (
-    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.scrim} onPress={onClose}>
-        <Pressable style={[styles.sheet, { gap: 4 }]} onPress={() => {}}>
-          <Text style={styles.sheetTitle}>Rooms</Text>
-          {rooms.length === 0 && <Text style={{ color: C.muted, paddingVertical: 8 }}>You are not in a chat room yet. Find one below.</Text>}
-          {rooms.map(([k, label, badge, sub]) => (
-            <TouchableOpacity key={k} onPress={() => onPick(k)} style={[styles.roomRow, value === k && styles.roomRowOn]} accessibilityRole="button" accessibilityLabel={label}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.roomName} numberOfLines={1}>{label}</Text>
-                {!!sub && <Text style={styles.roomSub} numberOfLines={1}>{sub}</Text>}
-              </View>
-              {!!badge && <View style={styles.chatTabBadge}><Text style={styles.chatTabBadgeTxt}>{badge}</Text></View>}
-            </TouchableOpacity>))}
-          <TouchableOpacity onPress={() => onPick('rooms')} style={styles.discover} accessibilityRole="button">
-            <Text style={styles.discoverTxt}>＋ Discover chat rooms</Text>
-            {!!invites && <View style={styles.chatTabBadge}><Text style={styles.chatTabBadgeTxt}>{invites}</Text></View>}
-          </TouchableOpacity>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
-
 const styles = themed(C => ({
   match: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 8, backgroundColor: C.orange + '22', borderBottomWidth: 1, borderBottomColor: C.orange },
   matchSub: { color: C.muted, fontSize: 12 },
@@ -483,18 +424,6 @@ const styles = themed(C => ({
   staffBtn: { backgroundColor: C.orange, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
   staffTxt: { color: C.white, fontSize: 11, fontWeight: '900', letterSpacing: 1 },
   scrim: { flex: 1, backgroundColor: 'rgba(1,10,30,0.6)', justifyContent: 'flex-end' },
-  chatTabs: { flexDirection: 'row', backgroundColor: C.navy, paddingHorizontal: 6, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.08)' },
-  chatTab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 11, paddingHorizontal: 4, borderBottomWidth: 3, borderBottomColor: 'transparent' },
-  chatTabOn: { borderBottomColor: C.orange },
-  chatTabTxt: { color: C.barMuted, fontWeight: '800', fontSize: 14, flexShrink: 1 },
-  chatTabBadge: { backgroundColor: C.orange, borderRadius: 9, minWidth: 18, height: 18, paddingHorizontal: 5, alignItems: 'center', justifyContent: 'center' },
-  chatTabBadgeTxt: { color: C.white, fontSize: 11, fontWeight: '900' },
-  roomRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 6, borderBottomWidth: 1, borderBottomColor: C.line, minHeight: 48 },
-  roomRowOn: { backgroundColor: 'rgba(251,88,1,0.10)', borderRadius: 10 },
-  roomName: { color: C.fg, fontSize: 16, fontWeight: '800' },
-  roomSub: { color: C.muted, fontSize: 13 },
-  discover: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10, minHeight: 48, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: C.orange },
-  discoverTxt: { color: C.orangeSoft, fontSize: 15, fontWeight: '800' },
   sheet: { backgroundColor: C.panel, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 18, paddingBottom: 34, gap: 14 },
   sheetTitle: { color: C.fg, fontSize: 22, fontWeight: '900', textTransform: 'uppercase' },
   label: { color: C.muted, fontSize: 12, fontWeight: '800', letterSpacing: 1.4, textTransform: 'uppercase' },
