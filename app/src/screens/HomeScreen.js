@@ -8,7 +8,7 @@ import { InstallBar, InstallGuide } from './Install';
 import { PLATFORMS, platformInfo } from '../platforms';
 import { Btn, Header, clock, showError, toast, PlatformLogo, RoomPicker, DartsmindName } from '../components';
 import { OpenTournaments } from './Tournaments';
-import { C, themed, useTheme, setTheme, THEMES, PALETTES } from '../theme';
+import { C, themed, useTheme, setTheme, THEMES, PALETTES, TEXT_SIZES, getTextSize, setTextSize } from '../theme';
 import ChatScreen from './ChatScreen';
 import MessagesScreen from './MessagesScreen';
 import FriendliesScreen from './FriendliesScreen';
@@ -125,6 +125,8 @@ export default function HomeScreen() {
   );
 
   let body;
+  // An open chat fills the screen (like WhatsApp): no platform switch, install bar or bottom tabs; ‹ goes back.
+  let fullChat = !!dm;
   if (dm) body = <ChatScreen room={dm.room} title={dm.other.name} subtitle={`Private chat · ${platformInfo(dm.room.split(':')[1]).name}${dm.other.role === 'admin' ? ' · DDL staff' : ''}`} onBack={() => { setTab(dm.back || 'messages'); setDm(null); }} onUser={onUser}
     other={dm.other} initialPlan={dm.plan} key={dm.room + (dm.plan || '')}
     below={dm.room.split(':')[1] === 'dartsmind' && <DartsmindBar other={dm.other} />} />;
@@ -162,11 +164,13 @@ export default function HomeScreen() {
     } else if (r === 'rooms') {
       body = <ChannelsScreen staff={isAdmin} onOpen={id => setRoom('ch:' + id)} header={<Header title={info[0]} subtitle={info[1]} onBack={back} right={headerRight} />} />;
     } else if (chan) {
-      body = <ChatScreen key={r} room={r} title={info[0]} subtitle={info[1]} onBack={back} onUser={onUser} right={headerRight}
+      fullChat = true;
+      body = <ChatScreen key={r} room={r} title={info[0]} subtitle={info[1]} onBack={back} onUser={onUser}
         channel={chan} onChannelDeleted={back}
         below={<ChannelBar c={chan} staff={isAdmin} onLeft={back} />} />;
     } else {
-      body = <ChatScreen key={r + st.platform} room={`${r}:${st.platform}`} title={info[0]} subtitle={info[1]} onBack={back} onUser={onUser} right={headerRight}
+      fullChat = true;
+      body = <ChatScreen key={r + st.platform} room={`${r}:${st.platform}`} title={info[0]} subtitle={info[1]} onBack={back} onUser={onUser}
         below={<>{r === 'tournament' && st.me?.id?.startsWith('ddl-') && <OpenTournaments staff={isAdmin} platform={st.platform} />}
           {r === 'tournament' && <MyMatches onOpen={openDM} platform={st.platform} />}</>} />;
     }
@@ -178,7 +182,7 @@ export default function HomeScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: C.navy }}>
-      {!admin && (
+      {!admin && !fullChat && (
         <View style={styles.platBar} accessibilityRole="tablist">
           {PLATFORMS.map(p => {
             const on = st.platform === p.key;
@@ -193,15 +197,15 @@ export default function HomeScreen() {
           })}
         </View>
       )}
-      {!dm && !admin && <InstallBar onOpen={() => setInstall(true)} />}
-      {!dm && !admin && <PushBar me={st.me} />}
-      {!dm && !admin && isAdmin && st.reports?.length > 0 && (
+      {!fullChat && !admin && <InstallBar onOpen={() => setInstall(true)} />}
+      {!fullChat && !admin && <PushBar me={st.me} />}
+      {!fullChat && !admin && isAdmin && st.reports?.length > 0 && (
         <TouchableOpacity style={styles.reportBar} onPress={() => setAdmin('reports')} accessibilityRole="button">
           <Text style={styles.reportTxt}>🚩 {st.reports.length} report{st.reports.length === 1 ? '' : 's'} from players waiting</Text>
           <Text style={styles.reportTxt}>Review ›</Text>
         </TouchableOpacity>)}
       <View style={{ flex: 1 }}>{body}</View>
-      {!dm && !admin && (
+      {!fullChat && !admin && (
         <View style={styles.tabs}>
           {TABS.map(([k, ic, label]) => {
             const badge = k === 'myddl' ? (st.checkinDue || []).length : k === 'messages' ? unreadDMs + (st.noticesUnread || 0) : k === 'help' && isAdmin ? openHelp
@@ -377,6 +381,18 @@ function Settings({ visible, theme, me, onClose, onModeration, onHelp, onInstall
                     <View style={[styles.swBubble, { backgroundColor: p.mine, alignSelf: 'flex-end', width: '45%' }]} />
                   </View>
                   <Text style={[styles.optionTxt, on && { color: C.orangeSoft }]}>{on ? '● ' : ''}{label}</Text>
+                </TouchableOpacity>);
+            })}
+          </View>
+          <Text style={styles.label}>Text size</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {TEXT_SIZES.map(([k, label]) => {
+              const on = getTextSize() === k;
+              return (
+                <TouchableOpacity key={k} onPress={() => setTextSize(k)} style={[styles.option, { alignItems: 'center', paddingVertical: 10 }, on && styles.optionOn]}
+                  accessibilityRole="radio" accessibilityState={{ selected: on }} accessibilityLabel={'Text size ' + label}>
+                  <Text style={{ color: on ? C.orangeSoft : C.fg, fontWeight: '800', fontSize: Math.round(15 * Number(k)) }}>Aa</Text>
+                  <Text style={[styles.optionTxt, on && { color: C.orangeSoft }]}>{label}</Text>
                 </TouchableOpacity>);
             })}
           </View>

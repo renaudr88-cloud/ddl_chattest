@@ -7,15 +7,15 @@ import * as ImagePicker from 'expo-image-picker';
 import { chat, useChat, isMuted, CAN_UPLOAD, REACTIONS, blockedSet } from '../chat';
 import { ReportSheet } from './Report';
 import { hasBad } from '../filter';
-import { Avatar, Header, Notice, RoleTag, Lightbox, Empty, timeLabel, clock, toast, showError } from '../components';
-import { C, R, themed, useTheme } from '../theme';
+import { Avatar, Notice, RoleTag, Lightbox, Empty, timeLabel, clock, toast, showError } from '../components';
+import { C, R, themed, useLook, fs } from '../theme';
 import { TournamentCard } from './Tournaments';
 import { PollComposer, PollCard, PinBar, SearchBar } from './Extras';
 import { PlanComposer, PlanCard } from './Planner';
 
 export default function ChatScreen({ room, title, subtitle, onBack, onUser, right, below, other, initialPlan, channel, onChannelDeleted }) {
   const st = useChat();
-  const theme = useTheme();
+  const theme = useLook();   // redraw on a change of theme or text size
   const [text, setText] = useState('');
   const [img, setImg] = useState(null);       // local uri before upload
   const [sending, setSending] = useState(false);
@@ -139,15 +139,20 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
   const renderItem = useCallback(({ item }) => <Row m={item} meId={meId} admin={admin} muted={muted} theme={theme} act={act} />, [meId, admin, muted, theme]);
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}>
-      <Header title={title} subtitle={subtitle} onBack={onBack} right={
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <TouchableOpacity onPress={() => { setSearchOn(!searchOn); setQ(''); }} hitSlop={8} accessibilityLabel="Search in this chat">
-            <Text style={{ fontSize: 18, color: C.white }}>🔍</Text></TouchableOpacity>
-          {group && admin && <TouchableOpacity onPress={() => setStaffMenu(true)} hitSlop={8} accessibilityLabel="Close or hide this chat">
-            <View style={[styles.lockBtn, (closed || hidden) && { backgroundColor: C.bad, borderColor: C.bad }]}>
-              <Text style={styles.lockTxt}>{hidden ? '🙈 Hidden' : closed ? '🔒 Closed' : '🔧 Chat'}</Text></View></TouchableOpacity>}
-          {right}
-        </View>} />
+      {/* Compact header (like WhatsApp): ‹ back, the chat's name, search, and ⋯ for staff. */}
+      <View style={styles.head}>
+        {onBack && <TouchableOpacity onPress={onBack} style={styles.headBtn} accessibilityLabel="Back to chats"><Text style={styles.headBack}>‹</Text></TouchableOpacity>}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.headTitle} numberOfLines={1}>{title}</Text>
+          {!!subtitle && <Text style={styles.headSub} numberOfLines={1}>{subtitle}</Text>}
+        </View>
+        {(closed || hidden) && <Text style={styles.headState}>{hidden ? '🙈' : '🔒'}</Text>}
+        <TouchableOpacity onPress={() => { setSearchOn(!searchOn); setQ(''); }} style={styles.headBtn} accessibilityLabel="Search in this chat">
+          <Text style={{ fontSize: 18 }}>🔍</Text></TouchableOpacity>
+        {group && admin && <TouchableOpacity onPress={() => setStaffMenu(true)} style={styles.headBtn} accessibilityLabel="Chat options for staff">
+          <Text style={styles.headMore}>⋯</Text></TouchableOpacity>}
+        {right}
+      </View>
       {below}
       {group && <PinBar pin={st.pins?.[room]} staff={admin} onClear={() => chat.request('pin.clear', { room }).then(() => toast('Unpinned.')).catch(showError)} />}
       {searchOn && <SearchBar q={q} setQ={setQ} count={data.length} more={!!st.more?.[room]} onOlder={() => chat.loadOlder(room).catch(() => {})}
@@ -162,7 +167,7 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
           ListEmptyComponent={<View style={{ transform: [{ scaleY: -1 }] }}><Empty text="No messages yet. Say hi 👋" /></View>}
         />}
       <View style={styles.composer}>
-        {hidden && admin && <Notice text={'🙈 This chat is hidden: players do not see it. Tap "🙈 Hidden" at the top to show it again.'} />}
+        {hidden && admin && <Notice text={'🙈 This chat is hidden: players do not see it. Tap ⋯ at the top to show it again.'} />}
         {closed && <Notice text={admin ? '🔒 This chat is closed: players can only read it. Tap the button at the top to open it again.'
           : '🔒 This chat is closed by staff. You can still read it.'} />}
         {muted && !locked && <Notice text={`You are muted until ${clock(st.me.sanction.muted_until)}. You can still read the chat.`} />}
@@ -187,9 +192,9 @@ export default function ChatScreen({ room, title, subtitle, onBack, onUser, righ
           {canPlan && <TouchableOpacity style={styles.icon} onPress={() => { setPlanFixture(null); setPlanOpen(true); }} disabled={muted} accessibilityLabel="Plan a league match"><Text style={{ fontSize: 20 }}>📅</Text></TouchableOpacity>}
           {group && admin && <TouchableOpacity style={styles.icon} onPress={() => setPollOpen(true)} disabled={muted} accessibilityLabel="New poll"><Text style={{ fontSize: 20 }}>📊</Text></TouchableOpacity>}
           <TextInput style={styles.input} value={text} onChangeText={onType} multiline maxLength={1000} editable={!muted}
-            placeholder={locked ? '🔒 Closed by staff' : room.startsWith('dm:') ? 'Write a private message…' : 'Message… type @ to tag a player'} placeholderTextColor={C.muted} />
-          <TouchableOpacity style={[styles.send, (muted || sending) && { opacity: 0.45 }]} onPress={send} disabled={muted || sending}>
-            {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendTxt}>SEND</Text>}
+            placeholder={locked ? '🔒 Closed by staff' : room.startsWith('dm:') ? 'Message' : 'Message · @ to tag'} placeholderTextColor={C.muted} />
+          <TouchableOpacity style={[styles.send, (muted || sending) && { opacity: 0.45 }]} onPress={send} disabled={muted || sending} accessibilityLabel="Send">
+            {sending ? <ActivityIndicator color="#fff" /> : <Text style={styles.sendTxt}>➤</Text>}
           </TouchableOpacity>
         </View>
       </View>
@@ -315,18 +320,18 @@ const styles = themed(C => ({
   theirs: { backgroundColor: C.bubble, borderRadius: 14, borderTopLeftRadius: 4 },
   mine: { backgroundColor: C.mine, borderRadius: 14, borderTopRightRadius: 4 },
   meta: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 2 },
-  name: { color: C.fg, fontWeight: '700', fontSize: 13 },
-  time: { color: C.muted, fontSize: 11 },
+  name: { color: C.fg, fontWeight: '700', fontSize: fs(13) },
+  time: { color: C.muted, fontSize: fs(11) },
   del: { color: C.muted, fontSize: 11, textDecorationLine: 'underline' },
   tagged: { borderWidth: 2, borderColor: C.orange },
   quote: { borderLeftWidth: 3, borderLeftColor: C.orange, paddingLeft: 8, marginBottom: 4, opacity: 0.85 },
-  quoteName: { color: C.orangeSoft, fontWeight: '800', fontSize: 12 },
-  quoteTxt: { color: C.fg, fontSize: 13 },
+  quoteName: { color: C.orangeSoft, fontWeight: '800', fontSize: fs(12) },
+  quoteTxt: { color: C.fg, fontSize: fs(13) },
   replyBar: { flexDirection: 'row', alignItems: 'center', gap: 10, borderLeftWidth: 3, borderLeftColor: C.orange, paddingLeft: 10, marginBottom: 8 },
   reacts: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 },
   react: { backgroundColor: C.bg, borderRadius: 12, paddingHorizontal: 7, paddingVertical: 2, borderWidth: 1, borderColor: C.line },
   reactMine: { borderColor: C.orange, backgroundColor: C.orange + '33' },
-  reactTxt: { color: C.fg, fontSize: 13 },
+  reactTxt: { color: C.fg, fontSize: fs(13) },
   scrim: { flex: 1, backgroundColor: 'rgba(1,10,30,0.6)', justifyContent: 'center', padding: 24 },
   menu: { backgroundColor: C.panel, borderRadius: 18, padding: 14, gap: 4 },
   menuWho: { color: C.muted, fontSize: 13, marginBottom: 6 },
@@ -340,14 +345,21 @@ const styles = themed(C => ({
   tagMe: { color: C.white, backgroundColor: C.orange },
   suggest: { backgroundColor: C.bg, borderWidth: 1, borderColor: C.line, borderRadius: R.md, marginBottom: 8, overflow: 'hidden' },
   sugRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.line },
-  sugName: { color: C.fg, fontWeight: '700', fontSize: 15 },
-  txt: { color: C.fg, fontSize: 15, lineHeight: 21 },
+  sugName: { color: C.fg, fontWeight: '700', fontSize: fs(15) },
+  txt: { color: C.fg, fontSize: fs(15), lineHeight: fs(21) },
   img: { width: 220, height: 220, borderRadius: R.md, marginTop: 6, backgroundColor: C.panel },
-  composer: { backgroundColor: C.panel, borderTopWidth: 1, borderTopColor: C.line, padding: 10, paddingBottom: Platform.OS === 'ios' ? 24 : 10 },
+  composer: { backgroundColor: C.panel, borderTopWidth: 1, borderTopColor: C.line, paddingHorizontal: 8, paddingVertical: 6, paddingBottom: Platform.OS === 'ios' ? 22 : 8 },
   preview: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
   row: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
-  icon: { width: 44, height: 44, borderRadius: R.md, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg },
-  input: { flex: 1, minHeight: 44, maxHeight: 120, backgroundColor: C.bg, color: C.fg, borderRadius: R.md, borderWidth: 1, borderColor: C.line, paddingHorizontal: 12, paddingTop: 11, paddingBottom: 11, fontSize: 16 },
-  send: { height: 44, paddingHorizontal: 16, borderRadius: R.md, backgroundColor: C.orange, alignItems: 'center', justifyContent: 'center' },
-  sendTxt: { color: C.white, fontWeight: '900', letterSpacing: 1.5 },
+  icon: { width: 42, height: 44, alignItems: 'center', justifyContent: 'center' },
+  input: { flex: 1, minHeight: 44, maxHeight: 140, backgroundColor: C.bg, color: C.fg, borderRadius: 22, borderWidth: 1, borderColor: C.line, paddingHorizontal: 14, paddingTop: 11, paddingBottom: 11, fontSize: fs(16) },
+  send: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.orange, alignItems: 'center', justifyContent: 'center' },
+  sendTxt: { color: C.white, fontWeight: '900', fontSize: 18 },
+  head: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: C.navy, borderBottomWidth: 2, borderBottomColor: C.orange, paddingHorizontal: 4, paddingVertical: 4, minHeight: 56 },
+  headBtn: { minWidth: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  headBack: { color: C.white, fontSize: 34, lineHeight: 36, marginTop: -4 },
+  headTitle: { color: C.white, fontSize: fs(17), fontWeight: '800' },
+  headSub: { color: C.barMuted, fontSize: fs(12) },
+  headState: { fontSize: 16, marginHorizontal: 2 },
+  headMore: { color: C.white, fontSize: 24, fontWeight: '900', lineHeight: 26 },
 }));

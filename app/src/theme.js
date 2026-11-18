@@ -54,22 +54,45 @@ const listeners = new Set();
 
 export const getTheme = () => current;
 
+// Text size for players who see less well: the chat's messages, names, input and chat list scale with it.
+export const TEXT_SIZES = [['1', 'Normal'], ['1.2', 'Large'], ['1.4', 'Extra large']];
+const SIZE_KEY = 'ddl-chat-text-size';
+let scale = 1;
+export const getTextSize = () => String(scale);
+export const fs = n => Math.round(n * scale);   // a font size (or line height) in the chosen text size
+const token = () => current + '|' + scale;
+const notify = () => listeners.forEach(fn => fn(token()));
+
 export function setTheme(name) {
   if (!PALETTES[name] || name === current) return;
   current = name;
-  listeners.forEach(fn => fn(name));
+  notify();
   AsyncStorage.setItem(KEY, name).catch(() => {});
+}
+export function setTextSize(v) {
+  const n = Number(v);
+  if (!TEXT_SIZES.some(([k]) => Number(k) === n) || n === scale) return;
+  scale = n;
+  notify();
+  AsyncStorage.setItem(SIZE_KEY, String(n)).catch(() => {});
 }
 
 export async function loadTheme() {
-  try { const v = await AsyncStorage.getItem(KEY); if (PALETTES[v] && v !== current) { current = v; listeners.forEach(fn => fn(v)); } } catch {}
+  try { const v = await AsyncStorage.getItem(KEY); if (PALETTES[v] && v !== current) { current = v; notify(); } } catch {}
+  try { const z = Number(await AsyncStorage.getItem(SIZE_KEY)); if (TEXT_SIZES.some(([k]) => Number(k) === z) && z !== scale) { scale = z; notify(); } } catch {}
   return current;
 }
 
-// Re-renders the calling component when the theme changes.
+// Re-renders the calling component when the theme or the text size changes. Returns the theme's name.
 export function useTheme() {
-  const [t, setT] = useState(current);
-  useEffect(() => { listeners.add(setT); setT(current); return () => listeners.delete(setT); }, []);
+  const [, setT] = useState(token());
+  useEffect(() => { listeners.add(setT); setT(token()); return () => listeners.delete(setT); }, []);
+  return current;
+}
+// For lists that must redraw on a change of theme or text size (FlatList extraData).
+export function useLook() {
+  const [t, setT] = useState(token());
+  useEffect(() => { listeners.add(setT); setT(token()); return () => listeners.delete(setT); }, []);
   return t;
 }
 
@@ -81,8 +104,9 @@ export function themed(fn) {
   const cache = {};
   return new Proxy({}, {
     get: (_, k) => {
-      if (!cache[current]) cache[current] = StyleSheet.create(fn(PALETTES[current]));
-      return cache[current][k];
+      const t = token();
+      if (!cache[t]) cache[t] = StyleSheet.create(fn(PALETTES[current]));
+      return cache[t][k];
     },
   });
 }

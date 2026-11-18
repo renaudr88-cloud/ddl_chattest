@@ -6,11 +6,12 @@ import { useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ScrollView } from 'react-native';
 import { useChat, mentionCount, blockedSet } from '../chat';
 import { timeLabel, s as ui } from '../components';
-import { C, themed } from '../theme';
+import { C, themed, useLook, fs } from '../theme';
 
 // entries: [{ key, room, label, icon, sub, badge }]  key = what HomeScreen opens, room = the Firestore room
 export default function ChatList({ header, fixed, rooms, invites, onOpen, onDiscover }) {
   const st = useChat();
+  useLook();   // redraw on a change of theme or text size
   const [q, setQ] = useState('');
   const hide = useMemo(() => blockedSet(st), [st.blockedUsers]);
   const ql = q.trim().toLowerCase();
@@ -73,9 +74,9 @@ const styles = themed(C => ({
   section: { color: C.muted, fontSize: 12, fontWeight: '800', letterSpacing: 1.4, textTransform: 'uppercase', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.line, minHeight: 64 },
   icon: { width: 46, height: 46, borderRadius: 13, backgroundColor: C.panel, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
-  name: { color: C.fg, fontSize: 16, fontWeight: '800', flexShrink: 1 },
-  time: { color: C.muted, fontSize: 12 },
-  preview: { color: C.muted, fontSize: 14, flex: 1 },
+  name: { color: C.fg, fontSize: fs(16), fontWeight: '800', flexShrink: 1 },
+  time: { color: C.muted, fontSize: fs(12) },
+  preview: { color: C.muted, fontSize: fs(14), flex: 1 },
   badge: { backgroundColor: C.orange, borderRadius: 11, minWidth: 22, height: 22, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
   badgeTxt: { color: C.white, fontSize: 12, fontWeight: '900' },
   discover: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, margin: 16, minHeight: 48, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: C.orange },
