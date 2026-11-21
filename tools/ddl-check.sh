@@ -52,7 +52,7 @@ foreach ($v("SHOW GLOBAL STATUS WHERE Variable_name IN (\"Uptime\",\"Threads_con
 echo "\n--- biggest tables (rows, MB, indexes) ---\n";
 try {
 $db = $pdo->query("SELECT DATABASE()")->fetchColumn();
-$t = $pdo->prepare("SELECT table_name, table_rows, ROUND((data_length+index_length)/1048576,1) mb, engine FROM information_schema.tables WHERE table_schema = ? ORDER BY data_length+index_length DESC LIMIT 25");
+$t = $pdo->prepare("SELECT TABLE_NAME AS table_name, TABLE_ROWS AS table_rows, ROUND((DATA_LENGTH+INDEX_LENGTH)/1048576,1) AS mb, ENGINE AS engine FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? ORDER BY DATA_LENGTH+INDEX_LENGTH DESC LIMIT 30");
 $t->execute([$db]);
 foreach ($t->fetchAll(PDO::FETCH_ASSOC) as $r) {
   $ix = $pdo->query("SHOW INDEX FROM `".$r["table_name"]."`")->fetchAll(PDO::FETCH_ASSOC);
